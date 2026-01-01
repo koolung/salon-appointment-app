@@ -5,7 +5,7 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getRevenueReport(startDate: Date, endDate: Date, groupBy: 'day' | 'week' | 'month' = 'day') {
+  async getRevenueReport(startDate: Date, endDate: Date, groupBy: 'day' | 'week' | 'month' = 'day'): Promise<Record<string, number>> {
     const payments = await this.prisma.payment.findMany({
       where: {
         createdAt: {
