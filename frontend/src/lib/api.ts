@@ -49,6 +49,8 @@ export const employeesAPI = {
   getAvailability: (id: string, date: string) => api.get(`/employees/${id}/availability?date=${date}`),
 };
 
+export default api;
+
 // Availability APIs
 export const availabilityAPI = {
   checkSlots: (employeeId: string, date: string) => 

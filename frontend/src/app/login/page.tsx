@@ -22,8 +22,18 @@ export default function LoginPage() {
     try {
       const response = await authAPI.signIn({ email, password });
       const { user, token } = response.data;
+      
+      // Debug log
+      console.log('Login response user:', user);
+      
       login(user, token);
-      router.push('/dashboard');
+      
+      // Route based on role
+      if (user?.role === 'ADMIN') {
+        router.push('/admin');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed');
     } finally {
