@@ -1,0 +1,279 @@
+CUSTOM SALON BOOKING APP — MASTER TODO LIST
+0. PROJECT FOUNDATION
+
+ Define core goals (AI receptionist, dynamic booking, staff + sales tracking)
+
+ Define supported booking channels (AI voice, AI chat, web widget, admin)
+
+ Define supported external calendars (Google, Dikidi, Jane, Squarespace)
+
+ Decide MVP vs Phase 2 features
+
+ Create Git repository
+
+ Define environments: local, staging, production
+
+ Define environment variables structure
+
+1. TECH STACK SETUP
+Backend
+
+ Initialize NestJS project (TypeScript)
+
+ Configure ESLint + Prettier
+
+ Configure dotenv for environment variables
+
+ Set up global error handling
+
+ Set up request logging
+
+Frontend
+
+ Initialize Next.js (App Router)
+
+ Install Tailwind CSS
+
+ Install shadcn/ui
+
+ Configure layout structure (public vs admin)
+
+ Configure form validation (Zod)
+
+
+2. DATABASE & ORM
+Database
+
+ Provision PostgreSQL
+
+ Enable SSL
+
+ Configure backups
+
+ORM (Prisma)
+
+ Install Prisma
+
+ Initialize schema
+
+ Configure migrations
+
+ Seed initial data
+
+Core Tables
+
+ Users
+
+ Roles & permissions
+
+ Employees (stylists)
+
+ Services
+
+ Service categories
+
+ Service durations
+
+ Service buffers
+
+ Availability rules
+
+ Appointments
+
+ Appointment services
+
+ Clients
+
+ Sales / revenue
+
+ Payments (optional)
+
+ Calendar integrations
+
+ External bookings
+
+ AI interactions
+
+ Audit logs
+
+
+3. AUTHENTICATION & AUTHORIZATION
+
+ Implement Auth (Auth.js / JWT)
+
+ Role-based access control
+
+ Admin role
+
+ Employee role
+
+ Reception role
+
+ Client role
+
+ Protect admin endpoints
+
+ Session expiration
+
+ Password reset flow
+
+
+4. CORE BOOKING ENGINE (CRITICAL)
+Availability Logic
+
+ Define availability model (weekly + exceptions)
+
+ Define time slot granularity (e.g. 15 min)
+
+ Implement service duration calculation
+
+ Implement buffer-before and buffer-after
+
+ Handle employee-specific availability
+
+ Handle multi-service bookings
+
+ Handle overlapping services
+
+Conflict Prevention
+
+ Redis-based booking lock
+
+ Atomic transaction for booking creation
+
+ Idempotency keys for booking requests
+
+ Prevent race conditions (AI vs web)
+
+Booking Flow
+
+ Check availability endpoint
+
+ Create appointment endpoint
+
+ Reschedule appointment endpoint
+
+ Cancel appointment endpoint
+
+ Confirm appointment endpoint
+
+ No-show handling
+
+
+5. REDIS & PERFORMANCE
+
+ Set up Redis
+
+ Implement booking locks
+
+ Cache availability results
+
+ Rate limit AI requests
+
+ Store temporary AI session context
+
+
+ 6. ONLINE BOOKING (CLIENT SIDE)
+
+ Service selection UI
+
+ Stylist selection UI
+
+ Date/time picker
+
+ Availability fetch logic
+
+ Booking confirmation screen
+
+ Client account creation
+
+ Booking modification UI
+
+ Cancellation UI
+
+ Email notification for booking confirmation, cancellation, modification and etc.
+
+
+ 7. ADMIN DASHBOARD
+Core Admin
+
+ Manage employees
+
+ Manage services
+
+ Manage pricing
+
+ Manage availability
+
+ Manual booking creation
+
+ Manual overrides
+
+Calendar View
+
+ Day view
+
+ Week view
+
+ Employee filtering
+
+ Drag & drop reschedule
+
+
+ 8. EMPLOYEE PRODUCTIVITY TRACKING
+
+ Appointments per employee
+
+ Tips per employee
+
+ Revenue per employee
+
+ Utilization percentage
+
+ Avg service duration vs actual
+
+ No-show rate
+
+ Cancellation rate
+
+
+ 9. SALES & REPORTING
+
+ Revenue by day/week/month
+
+ Revenue by service
+
+ Revenue by employee
+
+ Average ticket size
+
+ Repeat client tracking
+
+ Export reports (CSV)
+
+
+
+10. NOTIFICATIONS
+
+ Booking confirmation email
+
+ Booking modification email
+
+ Reminder notifications
+
+ Cancellation notifications
+
+
+11. SECURITY
+
+ Input validation everywhere
+
+ SQL injection prevention
+
+ Webhook signature validation
+
+ Rate limiting
+
+ Audit logs
+
+ GDPR-style data deletion
