@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query } from '@nestjs/common';
 import { ServicesService } from './services.service';
 
 @Controller('services')
@@ -11,8 +11,9 @@ export class ServicesController {
   }
 
   @Get()
-  async listServices() {
-    return this.servicesService.getAllServices();
+  async listServices(@Query('isActive') isActive?: string) {
+    const isActiveFilter = isActive === 'true' ? true : isActive === 'false' ? false : undefined;
+    return this.servicesService.getAllServices(isActiveFilter);
   }
 
   @Get('categories')
@@ -33,6 +34,11 @@ export class ServicesController {
   @Put(':id')
   async updateService(@Param('id') id: string, @Body() data: any) {
     return this.servicesService.updateService(id, data);
+  }
+
+  @Delete(':id')
+  async deleteService(@Param('id') id: string) {
+    return this.servicesService.deleteService(id);
   }
 
   @Get(':category/:categoryId')

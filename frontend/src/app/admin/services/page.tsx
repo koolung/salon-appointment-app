@@ -21,18 +21,32 @@ export default function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchServices = async () => {
-      try {
-        const res = await api.get('/services');
-        setServices(res.data || []);
-      } catch (error) {
-        console.error('Failed to fetch services:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchServices = async () => {
+    try {
+      const res = await api.get('/services');
+      setServices(res.data || []);
+    } catch (error) {
+      console.error('Failed to fetch services:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this service?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/services/${id}`);
+      setServices(services.filter(s => s.id !== id));
+    } catch (error: any) {
+      console.error('Failed to delete service:', error);
+      alert(error.response?.data?.message || 'Failed to delete service');
+    }
+  };
+
+  useEffect(() => {
     fetchServices();
   }, []);
 
@@ -106,7 +120,12 @@ export default function ServicesPage() {
                     >
                       Edit
                     </Link>
-                    <button className="text-red-600 hover:underline text-sm">Delete</button>
+                    <button
+                      onClick={() => handleDelete(service.id)}
+                      className="text-red-600 hover:underline text-sm"
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>

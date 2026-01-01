@@ -1,53 +1,118 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/lib/api';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 
-export default function NewServicePage() {
+interface Service {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  baseDuration: number;
+  isActive: boolean;
+  categoryId?: string;
+}
+
+export default function EditServicePage() {
+  const params = useParams();
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
+  const serviceId = params.id as string;
+  
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [formData, setFormData] = useState<Service>({
+    id: '',
     name: '',
     description: '',
-    price: '',
-    baseDuration: '30',
-    categoryId: '',
+    price: 0,
+    baseDuration: 30,
+    isActive: true,
   });
 
+  useEffect(() => {
+    const fetchService = async () => {
+      try {
+        const res = await api.get(`/services/${serviceId}`);
+        setFormData(res.data);
+      } catch (error) {
+        console.error('Failed to fetch service:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchService();
+  }, [serviceId]);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    const { name, value, type } = e.target;
+    setFormData({
+      ...formData,
+      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    setSubmitting(true);
 
     try {
-      await api.post('/services', {
+      await api.put(`/services/${serviceId}`, {
         name: formData.name,
         description: formData.description,
-        price: parseFloat(formData.price),
-        baseDuration: parseInt(formData.baseDuration),
-        // Don't send categoryId - leave it empty/null
+        price: parseFloat(formData.price.toString()),
+        baseDuration: parseInt(formData.baseDuration.toString()),
+        isActive: formData.isActive,
       });
       router.push('/admin/services');
-    } catch (error: any) {
-      console.error('Failed to create service:', error);
-      alert(error.response?.data?.message || 'Failed to create service');
+    } catch (error) {
+      console.error('Failed to update service:', error);
+      alert('Failed to update service');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!confirm('Are you sure you want to delete this service?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/services/${serviceId}`);
+      router.push('/admin/services');
+    } catch (error) {
+      console.error('Failed to delete service:', error);
+      alert('Failed to delete service');
+    }
+  };
+
+  if (loading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-96">
+          <div className="text-slate-600">Loading service...</div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
       <div className="max-w-2xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Add New Service</h1>
-          <p className="text-slate-600 mt-1">Create a new salon service</p>
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900">Edit Service</h1>
+            <p className="text-slate-600 mt-1">Update salon service details</p>
+          </div>
+          <button
+            onClick={handleDelete}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Delete Service
+          </button>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-8">
@@ -62,7 +127,6 @@ export default function NewServicePage() {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                placeholder="e.g., Hair Cut, Coloring, Styling"
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -76,7 +140,6 @@ export default function NewServicePage() {
                 value={formData.description}
                 onChange={handleChange}
                 rows={4}
-                placeholder="Describe the service..."
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
               />
             </div>
@@ -93,7 +156,6 @@ export default function NewServicePage() {
                   onChange={handleChange}
                   required
                   step="0.01"
-                  placeholder="0.00"
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
                 />
               </div>
@@ -112,30 +174,25 @@ export default function NewServicePage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-900 mb-2">
-                Category
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  name="isActive"
+                  checked={formData.isActive}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded border-slate-300"
+                />
+                <span className="text-slate-900 font-medium">Active</span>
               </label>
-              <select
-                name="categoryId"
-                value={formData.categoryId}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Select a category</option>
-                <option value="cat1">Hair Services</option>
-                <option value="cat2">Nail Services</option>
-                <option value="cat3">Skincare</option>
-                <option value="cat4">Makeup</option>
-              </select>
             </div>
 
             <div className="flex gap-4 pt-6">
               <button
                 type="submit"
-                disabled={loading}
+                disabled={submitting}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors font-medium"
               >
-                {loading ? 'Creating...' : 'Create Service'}
+                {submitting ? 'Saving...' : 'Save Changes'}
               </button>
               <button
                 type="button"

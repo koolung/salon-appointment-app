@@ -5,9 +5,14 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getAllServices(isActive = true) {
+  async getAllServices(isActive?: boolean) {
+    const where: any = {};
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+    
     return this.prisma.service.findMany({
-      where: { isActive },
+      where,
       include: {
         category: true,
       },
@@ -43,8 +48,17 @@ export class ServicesService {
   }
 
   async createService(data: any) {
+    // Ensure categoryId is not included or is null if not provided
+    const serviceData: any = {
+      name: data.name,
+      description: data.description || null,
+      price: data.price,
+      baseDuration: data.baseDuration || 30,
+      // categoryId is intentionally left out/null
+    };
+
     return this.prisma.service.create({
-      data,
+      data: serviceData,
       include: {
         category: true,
       },
@@ -58,6 +72,12 @@ export class ServicesService {
       include: {
         category: true,
       },
+    });
+  }
+
+  async deleteService(serviceId: string) {
+    return this.prisma.service.delete({
+      where: { id: serviceId },
     });
   }
 }

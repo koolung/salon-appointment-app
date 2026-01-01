@@ -89,8 +89,8 @@ model Service {
   id          String   @id @default(cuid())
   name        String
   description String?
-  categoryId  String
-  category    ServiceCategory @relation(fields: [categoryId], references: [id])
+  categoryId  String?
+  category    ServiceCategory? @relation(fields: [categoryId], references: [id])
   
   price       Float
   baseDuration Int // in minutes
