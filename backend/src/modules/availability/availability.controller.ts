@@ -1,44 +1,45 @@
-import { Controller, Get, Post, Put, Delete, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query } from '@nestjs/common';
 import { AvailabilityService } from './availability.service';
 
 @Controller('availability')
 export class AvailabilityController {
   constructor(private readonly availabilityService: AvailabilityService) {}
 
-  @Get('test')
-  testEndpoint() {
-    return { message: 'Availability endpoint is working', status: 'ok' };
+  @Get(':employeeId')
+  async getAvailabilityRules(@Param('employeeId') employeeId: string) {
+    return this.availabilityService.getAvailabilityRules(employeeId);
   }
 
-  @Get('employee/:id')
-  async getEmployeeAvailability(@Param('id') id: string) {
-    return this.availabilityService.getAvailabilityRules(id);
-  }
-
-  @Post('rules')
+  @Post()
   async createAvailabilityRule(@Body() data: any) {
     return this.availabilityService.createAvailabilityRule(data);
   }
 
-  @Get('rules/employee/:id')
-  async getAvailabilityRules(@Param('id') id: string) {
-    return this.availabilityService.getAvailabilityRules(id);
-  }
-
-  @Put('rules/:id')
+  @Put(':id')
   async updateAvailabilityRule(@Param('id') id: string, @Body() data: any) {
     return this.availabilityService.updateAvailabilityRule(id, data);
   }
 
-  @Delete('rules/:id')
+  @Delete(':id')
   async deleteAvailabilityRule(@Param('id') id: string) {
     return this.availabilityService.deleteAvailabilityRule(id);
   }
 
-  @Get('slots/employee/:id')
-  async getAvailableSlots(@Param('id') id: string, @Body() data: any) {
-    const date = new Date(data?.date || new Date());
-    const duration = data?.duration || 15;
-    return this.availabilityService.getAvailableSlots(id, date, duration);
+  @Get('slots/:employeeId')
+  async getAvailableSlots(
+    @Param('employeeId') employeeId: string,
+    @Query('date') date?: string,
+    @Query('duration') duration?: string,
+  ) {
+    const slotDate = new Date(date || new Date());
+    const slotDuration = parseInt(duration || '15', 10);
+    return this.availabilityService.getAvailableSlots(employeeId, slotDate, slotDuration);
+  }
+
+  @Post('check')
+  async checkAvailability(@Body() data: { employeeId: string; startTime: string; endTime: string }) {
+    const startTime = new Date(data.startTime);
+    const endTime = new Date(data.endTime);
+    return this.availabilityService.checkAvailability(data.employeeId, startTime, endTime);
   }
 }
