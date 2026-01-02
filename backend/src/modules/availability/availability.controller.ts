@@ -21,7 +21,17 @@ export class AvailabilityController {
     @Query('duration') duration?: string,
     @Query('timezone') timezone?: string,
   ) {
-    const slotDate = new Date(date || new Date());
+    let slotDate: Date;
+    
+    if (date) {
+      // Parse date string as local date (YYYY-MM-DD format)
+      const [year, month, day] = date.split('-').map(Number);
+      slotDate = new Date(year, month - 1, day);
+    } else {
+      const now = new Date();
+      slotDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+    
     const slotDuration = parseInt(duration || '15', 10);
     
     // TODO: Use timezone parameter for future timezone conversion

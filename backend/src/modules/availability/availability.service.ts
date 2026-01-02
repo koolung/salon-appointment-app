@@ -43,10 +43,10 @@ export class AvailabilityService {
     const startTimeDate = typeof startTime === 'string' ? new Date(startTime) : startTime;
     const endTimeDate = typeof endTime === 'string' ? new Date(endTime) : endTime;
 
-    // Use UTC time for consistency
-    const dayOfWeek = startTimeDate.getUTCDay();
-    const startTimeStr = `${String(startTimeDate.getUTCHours()).padStart(2, '0')}:${String(startTimeDate.getUTCMinutes()).padStart(2, '0')}`;
-    const endTimeStr = `${String(endTimeDate.getUTCHours()).padStart(2, '0')}:${String(endTimeDate.getUTCMinutes()).padStart(2, '0')}`;
+    // Use LOCAL time for consistency with how availability rules are stored
+    const dayOfWeek = startTimeDate.getDay();
+    const startTimeStr = `${String(startTimeDate.getHours()).padStart(2, '0')}:${String(startTimeDate.getMinutes()).padStart(2, '0')}`;
+    const endTimeStr = `${String(endTimeDate.getHours()).padStart(2, '0')}:${String(endTimeDate.getMinutes()).padStart(2, '0')}`;
 
     // Check for exception rules first
     const exceptionRule = await this.prisma.availabilityRule.findFirst({
@@ -54,8 +54,8 @@ export class AvailabilityService {
         employeeId,
         isException: true,
         exceptionDate: {
-          gte: new Date(Date.UTC(startTimeDate.getUTCFullYear(), startTimeDate.getUTCMonth(), startTimeDate.getUTCDate())),
-          lt: new Date(Date.UTC(startTimeDate.getUTCFullYear(), startTimeDate.getUTCMonth(), startTimeDate.getUTCDate() + 1)),
+          gte: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate()),
+          lt: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate() + 1),
         },
       },
     });
@@ -89,7 +89,7 @@ export class AvailabilityService {
     date: Date,
     slotDurationMinutes: number = 15,
   ) {
-    const dayOfWeek = date.getUTCDay();
+    const dayOfWeek = date.getDay();
     const slots: { start: string; end: string; isNextAvailable?: boolean }[] = [];
 
     // Get availability rules for this day
@@ -101,8 +101,8 @@ export class AvailabilityService {
           {
             isException: true,
             exceptionDate: {
-              gte: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())),
-              lt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)),
+              gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+              lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
             },
           },
         ],
@@ -122,14 +122,14 @@ export class AvailabilityService {
       where: {
         employeeId,
         startTime: {
-          gte: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())),
-          lt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)),
+          gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+          lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
         },
       },
     });
 
-    let currentTime = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), startHour, startMin, 0, 0));
-    const endTime = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), endHour, endMin, 0, 0));
+    let currentTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), startHour, startMin, 0, 0);
+    const endTime = new Date(date.getFullYear(), date.getMonth(), date.getDate(), endHour, endMin, 0, 0);
 
     let isFirstAvailable = true;
     const now = new Date();
@@ -172,8 +172,17 @@ export class AvailabilityService {
    * Returns null if employee has a full day off (00:00 - 00:00)
    */
   async getWorkingHours(employeeId: string, date: Date | string) {
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    const dayOfWeek = dateObj.getUTCDay();
+    let dateObj: Date;
+    
+    if (typeof date === 'string') {
+      // Parse date string as local date (YYYY-MM-DD format)
+      const [year, month, day] = date.split('-').map(Number);
+      dateObj = new Date(year, month - 1, day);
+    } else {
+      dateObj = date;
+    }
+    
+    const dayOfWeek = dateObj.getDay();
 
     // Check for exception rules first
     const exceptionRule = await this.prisma.availabilityRule.findFirst({
@@ -181,8 +190,8 @@ export class AvailabilityService {
         employeeId,
         isException: true,
         exceptionDate: {
-          gte: new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate())),
-          lt: new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate() + 1)),
+          gte: new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate()),
+          lt: new Date(dateObj.getFullYear(), dateObj.getMonth(), dateObj.getDate() + 1),
         },
       },
     });

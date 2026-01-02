@@ -96,13 +96,14 @@ export default function AppointmentsPage() {
   const [timeRangeEnd, setTimeRangeEnd] = useState<number>(17); // 5 PM default
 
   // Quick add appointment state
-  const [quickAddSlot, setQuickAddSlot] = useState<{ date: Date; hour: number; minute: number } | null>(null);
+  const [quickAddSlot, setQuickAddSlot] = useState<{ date: Date; hour: number; minute: number; employeeId: string } | null>(null);
   const [quickAddClientName, setQuickAddClientName] = useState('');
   const [quickAddPhone, setQuickAddPhone] = useState('');
   const [quickAddServiceIds, setQuickAddServiceIds] = useState<string[]>([]);
   const [quickAddDuration, setQuickAddDuration] = useState(60);
   const [isCreatingAppointment, setIsCreatingAppointment] = useState(false);
   const [currentTimePosition, setCurrentTimePosition] = useState<number | null>(null);
+  const [employeeWorkingHours, setEmployeeWorkingHours] = useState<Record<string, { startTime: string; endTime: string } | null>>({});
 
   const APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
   const BOOKING_SOURCES = ['ADMIN', 'WEB', 'PHONE', 'AI'];
@@ -118,10 +119,8 @@ export default function AppointmentsPage() {
         setAppointments(aptsRes.data || []);
         setEmployees(empsRes.data || []);
         setServices(secsRes.data || []);
-        // Set default to first employee if available
-        if (empsRes.data && empsRes.data.length > 0) {
-          setSelectedEmployeeId(empsRes.data[0].id);
-        }
+        // Set default to all employees (no filter)
+        setSelectedEmployeeId(null);
       } catch (error) {
         console.error('Failed to fetch data:', error);
       } finally {
@@ -205,8 +204,8 @@ export default function AppointmentsPage() {
   };
 
   const handleQuickAddAppointment = async () => {
-    if (!quickAddSlot || !selectedEmployeeId || quickAddServiceIds.length === 0) {
-      alert('Please select employee and at least one service');
+    if (!quickAddSlot || quickAddServiceIds.length === 0) {
+      alert('Please select at least one service');
       return;
     }
 
@@ -224,7 +223,7 @@ export default function AppointmentsPage() {
 
       const response = await api.post('/appointments', {
         clientId: 'temp-admin-booking', // Will be handled by backend
-        employeeId: selectedEmployeeId,
+        employeeId: quickAddSlot.employeeId,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         serviceIds: quickAddServiceIds,
@@ -269,6 +268,23 @@ export default function AppointmentsPage() {
     return getAppointmentsForDate(selectedDate);
   };
 
+  const isTimeSlotAvailable = (employeeId: string, hour: number, minute: number): boolean => {
+    const workingHours = employeeWorkingHours[employeeId];
+    
+    if (!workingHours) {
+      return false; // No working hours data = not available
+    }
+
+    const [startHour, startMinute] = workingHours.startTime.split(':').map(Number);
+    const [endHour, endMinute] = workingHours.endTime.split(':').map(Number);
+
+    const slotMinutesFromMidnight = hour * 60 + minute;
+    const workStartMinutes = startHour * 60 + startMinute;
+    const workEndMinutes = endHour * 60 + endMinute;
+
+    return slotMinutesFromMidnight >= workStartMinutes && slotMinutesFromMidnight < workEndMinutes;
+  };
+
   const calculateDayTimeRange = async () => {
     if (!selectedDate) {
       setTimeRangeStart(9);
@@ -279,7 +295,7 @@ export default function AppointmentsPage() {
     try {
       // If no employees loaded yet, use default
       if (!employees || employees.length === 0) {
-        console.log('No employees loaded yet, using default 9-17');
+        // console.log('No employees loaded yet, using default 9-17');
         setTimeRangeStart(9);
         setTimeRangeEnd(17);
         return;
@@ -290,7 +306,7 @@ export default function AppointmentsPage() {
       let latestEnd = 0;
       const dateStr = selectedDate.toISOString().split('T')[0];
 
-      console.log('Fetching availability for', employees.length, 'employees on', dateStr);
+      // console.log('Fetching availability for', employees.length, 'employees on', dateStr);
 
       for (const employee of employees) {
         try {
@@ -301,34 +317,34 @@ export default function AppointmentsPage() {
           });
 
           const workingHours = response.data;
-          console.log('Employee', employee.id, 'availability:', workingHours);
+          // console.log('Employee', employee.id, 'availability:', workingHours);
           
           if (workingHours && workingHours.startTime && workingHours.endTime) {
             const [startHour] = workingHours.startTime.split(':').map(Number);
             const [endHour] = workingHours.endTime.split(':').map(Number);
             
-            console.log('Parsed hours:', startHour, 'to', endHour);
+            // console.log('Parsed hours:', startHour, 'to', endHour);
             
             earliestStart = Math.min(earliestStart, startHour);
             latestEnd = Math.max(latestEnd, endHour);
           }
         } catch (empError) {
-          console.error('Error fetching availability for employee', employee.id, empError);
+          // console.error('Error fetching availability for employee', employee.id, empError);
           // Continue with next employee
         }
       }
 
-      console.log('Final range:', earliestStart, 'to', latestEnd);
+      // console.log('Final range:', earliestStart, 'to', latestEnd);
 
       if (earliestStart !== 24 && latestEnd !== 0) {
         const newStart = Math.max(0, earliestStart - 1);
         const newEnd = Math.min(24, latestEnd + 1);
-        console.log('Setting time range to', newStart, 'to', newEnd);
+        // console.log('Setting time range to', newStart, 'to', newEnd);
         setTimeRangeStart(newStart);
         setTimeRangeEnd(newEnd);
       } else {
         // No availability data, use default
-        console.log('No availability data found, using default 9-17');
+        // console.log('No availability data found, using default 9-17');
         setTimeRangeStart(9);
         setTimeRangeEnd(17);
       }
@@ -369,6 +385,35 @@ export default function AppointmentsPage() {
     
     return () => clearInterval(interval);
   }, [timeRangeStart, timeRangeEnd]);
+
+  // Fetch working hours for each employee
+  useEffect(() => {
+    const fetchEmployeeWorkingHours = async () => {
+      if (!selectedDate || !employees.length) {
+        setEmployeeWorkingHours({});
+        return;
+      }
+
+      const dateStr = selectedDate.toISOString().split('T')[0];
+      const hours: Record<string, { startTime: string; endTime: string } | null> = {};
+
+      for (const employee of employees) {
+        try {
+          const response = await api.get(`/availability/working-hours/${employee.id}`, {
+            params: { date: dateStr },
+          });
+          hours[employee.id] = response.data;
+        } catch (error) {
+          console.error('Error fetching working hours for employee', employee.id, error);
+          hours[employee.id] = null;
+        }
+      }
+
+      setEmployeeWorkingHours(hours);
+    };
+
+    fetchEmployeeWorkingHours();
+  }, [selectedDate, employees]);
 
   const previousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -990,20 +1035,27 @@ export default function AppointmentsPage() {
                               {Array.from({ length: (timeRangeEnd - timeRangeStart) * 4 }).map((_, idx) => {
                                 const hour = timeRangeStart + Math.floor(idx / 4);
                                 const minute = (idx % 4) * 15;
+                                const isAvailable = isTimeSlotAvailable(emp.id, hour, minute);
+                                
                                 return (
                                   <div
                                     key={idx}
                                     onClick={() => {
-                                      if (selectedDate) {
+                                      if (selectedDate && isAvailable) {
                                         setQuickAddSlot({
                                           date: selectedDate,
                                           hour,
                                           minute,
+                                          employeeId: emp.id,
                                         });
                                       }
                                     }}
-                                    className="h-6 w-48 border-t border-slate-100 border-r border-slate-200 hover:bg-blue-50 cursor-pointer transition-colors"
-                                    title="Click to add appointment"
+                                    className={`h-6 w-48 border-t border-slate-100 border-r border-slate-200 transition-colors ${
+                                      isAvailable
+                                        ? 'hover:bg-blue-50 cursor-pointer'
+                                        : 'bg-gray-300 cursor-not-allowed'
+                                    }`}
+                                    title={isAvailable ? 'Click to add appointment' : 'Not available'}
                                   ></div>
                                 );
                               })}
