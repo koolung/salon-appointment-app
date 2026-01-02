@@ -21,6 +21,26 @@ export class ServicesController {
     return this.servicesService.getAllCategories();
   }
 
+  @Get('categories/:id')
+  async getCategoryById(@Param('id') id: string) {
+    return this.servicesService.getCategoryById(id);
+  }
+
+  @Post('categories')
+  async createCategory(@Body() data: any) {
+    return this.servicesService.createCategory(data);
+  }
+
+  @Put('categories/:id')
+  async updateCategory(@Param('id') id: string, @Body() data: any) {
+    return this.servicesService.updateCategory(id, data);
+  }
+
+  @Delete('categories/:id')
+  async deleteCategory(@Param('id') id: string) {
+    return this.servicesService.deleteCategory(id);
+  }
+
   @Get(':id')
   async getService(@Param('id') id: string) {
     return this.servicesService.getServiceById(id);

@@ -44,7 +44,69 @@ export class ServicesService {
   }
 
   async getAllCategories() {
-    return this.prisma.serviceCategory.findMany();
+    return this.prisma.serviceCategory.findMany({
+      include: {
+        services: true,
+      },
+    });
+  }
+
+  async getCategoryById(categoryId: string) {
+    const category = await this.prisma.serviceCategory.findUnique({
+      where: { id: categoryId },
+      include: {
+        services: true,
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException('Category not found');
+    }
+
+    return category;
+  }
+
+  async createCategory(data: any) {
+    return this.prisma.serviceCategory.create({
+      data: {
+        name: data.name,
+        description: data.description || null,
+      },
+      include: {
+        services: true,
+      },
+    });
+  }
+
+  async updateCategory(categoryId: string, data: any) {
+    return this.prisma.serviceCategory.update({
+      where: { id: categoryId },
+      data: {
+        name: data.name,
+        description: data.description || null,
+      },
+      include: {
+        services: true,
+      },
+    });
+  }
+
+  async deleteCategory(categoryId: string) {
+    // Check if category has services
+    const category = await this.prisma.serviceCategory.findUnique({
+      where: { id: categoryId },
+      include: {
+        services: true,
+      },
+    });
+
+    if (category?.services.length) {
+      throw new Error('Cannot delete category with existing services');
+    }
+
+    return this.prisma.serviceCategory.delete({
+      where: { id: categoryId },
+    });
   }
 
   async createService(data: any) {

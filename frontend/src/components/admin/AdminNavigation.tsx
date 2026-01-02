@@ -12,6 +12,7 @@ export default function AdminNavigation() {
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/employees', label: 'Employees', icon: '👥' },
     { href: '/admin/services', label: 'Services', icon: '✨' },
+    { href: '/admin/categories', label: 'Categories', icon: '📂' },
     { href: '/admin/appointments', label: 'Appointments', icon: '📅' },
     { href: '/admin/availability', label: 'Availability', icon: '⏰' },
     { href: '/admin/reports', label: 'Reports', icon: '📈' },

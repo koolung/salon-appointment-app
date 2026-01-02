@@ -237,7 +237,7 @@ AppModule
 ### 🔄 Need Frontend Implementation
 - Admin dashboard UI ✅
 - Employee management pages
-- Service editor
+- Service editor ✅
 - Calendar view
 - Report dashboards
 - Settings pages
