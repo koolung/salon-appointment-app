@@ -92,6 +92,20 @@ export default function AppointmentsPage() {
   
   // Detail modal state
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [isEditingAppointment, setIsEditingAppointment] = useState(false);
+  const [editFormData, setEditFormData] = useState<{
+    clientFirstName: string;
+    clientLastName: string;
+    clientEmail: string;
+    clientPhone: string;
+    startTime: string;
+    endTime: string;
+    employeeId: string;
+    serviceIds: string[];
+    status: string;
+    notes: string;
+  } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [timeRangeStart, setTimeRangeStart] = useState<number>(9); // 9 AM default
   const [timeRangeEnd, setTimeRangeEnd] = useState<number>(17); // 5 PM default
 
@@ -201,6 +215,66 @@ export default function AppointmentsPage() {
     const day = d.getDay();
     const diff = d.getDate() - day;
     return new Date(d.setDate(diff));
+  };
+
+  const handleStartEditAppointment = () => {
+    if (!selectedAppointment) return;
+    
+    // Initialize form data from selected appointment
+    const startDateTime = new Date(selectedAppointment.startTime);
+    const endDateTime = new Date(selectedAppointment.endTime);
+    
+    setEditFormData({
+      clientFirstName: selectedAppointment.client?.user?.firstName || '',
+      clientLastName: selectedAppointment.client?.user?.lastName || '',
+      clientEmail: selectedAppointment.client?.user?.email || '',
+      clientPhone: selectedAppointment.client?.user?.phone || '',
+      startTime: startDateTime.toISOString().slice(0, 16), // For datetime-local input
+      endTime: endDateTime.toISOString().slice(0, 16),
+      employeeId: selectedAppointment.employee?.id || '',
+      serviceIds: selectedAppointment.services?.map(s => s.service?.id).filter(Boolean) as string[] || [],
+      status: selectedAppointment.status || 'PENDING',
+      notes: selectedAppointment.notes || '',
+    });
+    setIsEditingAppointment(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingAppointment(false);
+    setEditFormData(null);
+  };
+
+  const handleUpdateAppointment = async () => {
+    if (!selectedAppointment || !editFormData) return;
+
+    setIsSavingEdit(true);
+    try {
+      const response = await api.put(`/appointments/${selectedAppointment.id}`, {
+        clientFirstName: editFormData.clientFirstName,
+        clientLastName: editFormData.clientLastName,
+        clientEmail: editFormData.clientEmail,
+        clientPhone: editFormData.clientPhone,
+        startTime: new Date(editFormData.startTime).toISOString(),
+        endTime: new Date(editFormData.endTime).toISOString(),
+        employeeId: editFormData.employeeId,
+        serviceIds: editFormData.serviceIds,
+        status: editFormData.status,
+        notes: editFormData.notes,
+      });
+
+      // Update local state
+      const updatedAppointment = response.data;
+      setAppointments(appointments.map(apt => apt.id === updatedAppointment.id ? updatedAppointment : apt));
+      setSelectedAppointment(updatedAppointment);
+      setIsEditingAppointment(false);
+      setEditFormData(null);
+      alert('Appointment updated successfully!');
+    } catch (error: any) {
+      console.error('Failed to update appointment:', error);
+      alert(error.response?.data?.message || 'Failed to update appointment');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleQuickAddAppointment = async () => {
@@ -473,14 +547,14 @@ export default function AppointmentsPage() {
 
   return (
     <AdminLayout>
-      {/* Appointment Detail Modal */}
+      {/* Appointment Detail Modal - Editable */}
       {selectedAppointment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-lg max-w-3xl w-full my-8">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-start justify-between border-b border-slate-200">
               <div>
-                <h2 className="text-2xl font-bold">Appointment Details</h2>
+                <h2 className="text-2xl font-bold">{isEditingAppointment ? 'Edit Appointment' : 'Appointment Details'}</h2>
                 <p className="text-blue-100 mt-1">
                   {new Date(selectedAppointment.startTime).toLocaleDateString('en-US', {
                     weekday: 'long',
@@ -491,149 +565,322 @@ export default function AppointmentsPage() {
                 </p>
               </div>
               <button
-                onClick={() => setSelectedAppointment(null)}
+                onClick={() => {
+                  setSelectedAppointment(null);
+                  handleCancelEdit();
+                }}
                 className="text-white hover:bg-blue-800 rounded-lg p-2 transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
-              {/* Client Contact Info */}
-              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                <h3 className="font-bold text-slate-900 mb-3">👤 Client Contact Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-slate-600">Name</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedAppointment.client?.user?.firstName}{' '}
-                      {selectedAppointment.client?.user?.lastName}
-                    </p>
+            <div className="p-6 space-y-6 max-h-[calc(90vh-200px)] overflow-y-auto">
+              {isEditingAppointment && editFormData ? (
+                <>
+                  {/* Client Contact Info - EDIT MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-4">👤 Client Contact Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">First Name</label>
+                        <input
+                          type="text"
+                          value={editFormData.clientFirstName}
+                          onChange={(e) => setEditFormData({...editFormData, clientFirstName: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Last Name</label>
+                        <input
+                          type="text"
+                          value={editFormData.clientLastName}
+                          onChange={(e) => setEditFormData({...editFormData, clientLastName: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={editFormData.clientEmail}
+                          onChange={(e) => setEditFormData({...editFormData, clientEmail: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={editFormData.clientPhone}
+                          onChange={(e) => setEditFormData({...editFormData, clientPhone: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Email</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedAppointment.client?.user?.email || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Phone</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedAppointment.client?.user?.phone || 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Client ID</p>
-                    <p className="font-mono text-sm text-slate-900">{selectedAppointment.client?.id}</p>
-                  </div>
-                </div>
-              </div>
 
-              {/* Appointment Info */}
-              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                <h3 className="font-bold text-slate-900 mb-3">📅 Appointment Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-slate-600">Date & Time</p>
-                    <p className="font-semibold text-slate-900">
-                      {new Date(selectedAppointment.startTime).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {' - '}
-                      {new Date(selectedAppointment.endTime).toLocaleTimeString('en-US', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Staff Member</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedAppointment.employee?.user?.firstName}{' '}
-                      {selectedAppointment.employee?.user?.lastName}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Services</p>
-                    <p className="font-semibold text-slate-900">
-                      {selectedAppointment.services && selectedAppointment.services.length > 0
-                        ? selectedAppointment.services.map((s) => s.service?.name).join(', ')
-                        : 'N/A'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Status</p>
-                    <span
-                      className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
-                        statusColors[selectedAppointment.status] || 'bg-slate-100 text-slate-800'
-                      }`}
-                    >
-                      {selectedAppointment.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Booking Source & Notes */}
-              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                <h3 className="font-bold text-slate-900 mb-3">📝 Booking Details</h3>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-slate-600">Booking Source</p>
-                    <p className="font-semibold text-slate-900">
-                      {bookingSourceLabels[selectedAppointment.bookingSource || 'ADMIN'] ||
-                        selectedAppointment.bookingSource}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-slate-600">Notes / Special Requests</p>
-                    <p className="font-semibold text-slate-900 whitespace-pre-wrap">
-                      {selectedAppointment.notes || 'No notes'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Change History */}
-              {selectedAppointment.changes && selectedAppointment.changes.length > 0 && (
-                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                  <h3 className="font-bold text-slate-900 mb-3">📋 Change History</h3>
-                  <div className="space-y-3 max-h-64 overflow-y-auto">
-                    {[...selectedAppointment.changes].reverse().map((change) => (
-                      <div key={change.id} className="bg-white p-3 rounded border border-slate-200">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-semibold text-slate-900 capitalize">
-                              {change.fieldName.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                            </p>
-                            <p className="text-sm text-slate-600 mt-1">
-                              Changed from{' '}
-                              <span className="font-mono bg-red-50 px-2 py-1 rounded">
-                                {change.oldValue || 'empty'}
-                              </span>{' '}
-                              to{' '}
-                              <span className="font-mono bg-green-50 px-2 py-1 rounded">
-                                {change.newValue || 'empty'}
-                              </span>
-                            </p>
-                          </div>
-                          <div className="text-right text-sm text-slate-500">
-                            <p>{change.changedBy || 'System'}</p>
-                            <p>
-                              {new Date(change.createdAt).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                          </div>
+                  {/* Appointment Info - EDIT MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-4">📅 Appointment Information</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Start Date & Time</label>
+                        <input
+                          type="datetime-local"
+                          value={editFormData.startTime}
+                          onChange={(e) => setEditFormData({...editFormData, startTime: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">End Date & Time</label>
+                        <input
+                          type="datetime-local"
+                          value={editFormData.endTime}
+                          onChange={(e) => setEditFormData({...editFormData, endTime: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Staff Member</label>
+                        <select
+                          value={editFormData.employeeId}
+                          onChange={(e) => setEditFormData({...editFormData, employeeId: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select Staff Member</option>
+                          {employees.map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.user?.firstName} {emp.user?.lastName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">Services</label>
+                        <div className="space-y-2 max-h-40 overflow-y-auto border border-slate-300 rounded-lg p-3">
+                          {services.map((service) => (
+                            <label key={service.id} className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editFormData.serviceIds.includes(service.id)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditFormData({...editFormData, serviceIds: [...editFormData.serviceIds, service.id]});
+                                  } else {
+                                    setEditFormData({...editFormData, serviceIds: editFormData.serviceIds.filter(id => id !== service.id)});
+                                  }
+                                }}
+                                className="w-4 h-4"
+                              />
+                              <span className="text-sm text-slate-700">{service.name}</span>
+                            </label>
+                          ))}
                         </div>
                       </div>
-                    ))}
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Status</label>
+                        <select
+                          value={editFormData.status}
+                          onChange={(e) => setEditFormData({...editFormData, status: e.target.value})}
+                          className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {APPOINTMENT_STATUSES.map((status) => (
+                            <option key={status} value={status}>
+                              {status}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                </div>
+
+                  {/* Notes - EDIT MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">📝 Booking Notes</h3>
+                    <textarea
+                      value={editFormData.notes}
+                      onChange={(e) => setEditFormData({...editFormData, notes: e.target.value})}
+                      placeholder="Add special requests or notes..."
+                      rows={4}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Action Buttons - EDIT MODE */}
+                  <div className="flex gap-3 sticky bottom-0 bg-white pt-4 border-t">
+                    <button
+                      onClick={handleCancelEdit}
+                      className="flex-1 px-4 py-2 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleUpdateAppointment}
+                      disabled={isSavingEdit}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors disabled:opacity-50"
+                    >
+                      {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Client Contact Info - VIEW MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">👤 Client Contact Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-slate-600">Name</p>
+                        <p className="font-semibold text-slate-900">
+                          {selectedAppointment.client?.user?.firstName}{' '}
+                          {selectedAppointment.client?.user?.lastName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Email</p>
+                        <p className="font-semibold text-slate-900">
+                          {selectedAppointment.client?.user?.email || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Phone</p>
+                        <p className="font-semibold text-slate-900">
+                          {selectedAppointment.client?.user?.phone || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Client ID</p>
+                        <p className="font-mono text-sm text-slate-900">{selectedAppointment.client?.id}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Appointment Info - VIEW MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">📅 Appointment Information</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-slate-600">Date & Time</p>
+                        <p className="font-semibold text-slate-900">
+                          {new Date(selectedAppointment.startTime).toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                          {' - '}
+                          {new Date(selectedAppointment.endTime).toLocaleTimeString('en-US', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Staff Member</p>
+                        <p className="font-semibold text-slate-900">
+                          {selectedAppointment.employee?.user?.firstName}{' '}
+                          {selectedAppointment.employee?.user?.lastName}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Services</p>
+                        <p className="font-semibold text-slate-900">
+                          {selectedAppointment.services && selectedAppointment.services.length > 0
+                            ? selectedAppointment.services.map((s) => s.service?.name).join(', ')
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Status</p>
+                        <span
+                          className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                            statusColors[selectedAppointment.status] || 'bg-slate-100 text-slate-800'
+                          }`}
+                        >
+                          {selectedAppointment.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Booking Source & Notes - VIEW MODE */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">📝 Booking Details</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-sm text-slate-600">Booking Source</p>
+                        <p className="font-semibold text-slate-900">
+                          {bookingSourceLabels[selectedAppointment.bookingSource || 'ADMIN'] ||
+                            selectedAppointment.bookingSource}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-slate-600">Notes / Special Requests</p>
+                        <p className="font-semibold text-slate-900 whitespace-pre-wrap">
+                          {selectedAppointment.notes || 'No notes'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Change History - VIEW MODE */}
+                  {selectedAppointment.changes && selectedAppointment.changes.length > 0 && (
+                    <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                      <h3 className="font-bold text-slate-900 mb-3">📋 Change History</h3>
+                      <div className="space-y-3 max-h-64 overflow-y-auto">
+                        {[...selectedAppointment.changes].reverse().map((change) => (
+                          <div key={change.id} className="bg-white p-3 rounded border border-slate-200">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <p className="font-semibold text-slate-900 capitalize">
+                                  {change.fieldName.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                                </p>
+                                <p className="text-sm text-slate-600 mt-1">
+                                  Changed from{' '}
+                                  <span className="font-mono bg-red-50 px-2 py-1 rounded">
+                                    {change.oldValue || 'empty'}
+                                  </span>{' '}
+                                  to{' '}
+                                  <span className="font-mono bg-green-50 px-2 py-1 rounded">
+                                    {change.newValue || 'empty'}
+                                  </span>
+                                </p>
+                              </div>
+                              <div className="text-right text-sm text-slate-500">
+                                <p>{change.changedBy || 'System'}</p>
+                                <p>
+                                  {new Date(change.createdAt).toLocaleDateString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Button - VIEW MODE */}
+                  <div className="flex gap-3 sticky bottom-0 bg-white pt-4 border-t">
+                    <button
+                      onClick={() => setSelectedAppointment(null)}
+                      className="flex-1 px-4 py-2 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={handleStartEditAppointment}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                    >
+                      ✏️ Edit Appointment
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </div>

@@ -315,6 +315,160 @@ export class AppointmentsService {
     });
   }
 
+  async updateAppointment(
+    appointmentId: string,
+    data: {
+      startTime?: Date;
+      endTime?: Date;
+      clientFirstName?: string;
+      clientLastName?: string;
+      clientEmail?: string;
+      clientPhone?: string;
+      employeeId?: string;
+      serviceIds?: string[];
+      status?: string;
+      notes?: string;
+    },
+  ) {
+    const appointment = await this.getAppointment(appointmentId);
+
+    // If time is being changed, validate availability
+    if (data.startTime || data.endTime) {
+      const newStartTime = data.startTime || appointment.startTime;
+      const newEndTime = data.endTime || appointment.endTime;
+      const employeeId = data.employeeId || appointment.employeeId;
+
+      // Only check availability if time or employee changed
+      if (
+        newStartTime.getTime() !== appointment.startTime.getTime() ||
+        newEndTime.getTime() !== appointment.endTime.getTime() ||
+        employeeId !== appointment.employeeId
+      ) {
+        const isAvailable = await this.availabilityService.checkAvailability(
+          employeeId,
+          newStartTime,
+          newEndTime,
+        );
+
+        if (!isAvailable) {
+          throw new BadRequestException('Selected time slot is not available');
+        }
+
+        // Check for conflicts
+        const conflict = await this.prisma.appointment.findFirst({
+          where: {
+            id: { not: appointmentId },
+            employeeId,
+            status: {
+              in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'],
+            },
+            OR: [
+              {
+                startTime: { lt: newEndTime },
+                endTime: { gt: newStartTime },
+              },
+            ],
+          },
+        });
+
+        if (conflict) {
+          throw new BadRequestException('Time slot conflicts with existing appointment');
+        }
+      }
+    }
+
+    // Update client user info if provided
+    if (
+      data.clientFirstName ||
+      data.clientLastName ||
+      data.clientEmail ||
+      data.clientPhone
+    ) {
+      const clientRecord = await this.prisma.client.findUnique({
+        where: { id: appointment.clientId },
+        include: { user: true },
+      });
+
+      if (clientRecord && clientRecord.user) {
+        await this.prisma.user.update({
+          where: { id: clientRecord.user.id },
+          data: {
+            firstName: data.clientFirstName || clientRecord.user.firstName,
+            lastName: data.clientLastName || clientRecord.user.lastName,
+            email: data.clientEmail || clientRecord.user.email,
+            phone: data.clientPhone || clientRecord.user.phone,
+          },
+        });
+      }
+    }
+
+    // Update services if provided
+    const updateData: any = {};
+
+    if (data.startTime) {
+      updateData.startTime = data.startTime;
+    }
+    if (data.endTime) {
+      updateData.endTime = data.endTime;
+    }
+    if (data.status) {
+      updateData.status = data.status;
+    }
+    if (data.notes !== undefined) {
+      updateData.notes = data.notes;
+    }
+    if (data.employeeId) {
+      updateData.employeeId = data.employeeId;
+    }
+
+    if (data.serviceIds && data.serviceIds.length > 0) {
+      // Delete existing services
+      await this.prisma.appointmentService.deleteMany({
+        where: { appointmentId },
+      });
+      // Create new services with duration and price
+      updateData.services = {
+        create: await Promise.all(
+          data.serviceIds.map(async (serviceId) => {
+            const service = await this.prisma.service.findUnique({
+              where: { id: serviceId },
+            });
+            if (!service) {
+              throw new Error(`Service ${serviceId} not found`);
+            }
+            return {
+              serviceId,
+              duration: service.baseDuration,
+              price: service.price,
+            };
+          }),
+        ),
+      };
+    }
+
+    return this.prisma.appointment.update({
+      where: { id: appointmentId },
+      data: updateData,
+      include: {
+        services: {
+          include: {
+            service: true,
+          },
+        },
+        client: {
+          include: {
+            user: true,
+          },
+        },
+        employee: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+  }
+
   async completeAppointment(appointmentId: string) {
     return this.prisma.appointment.update({
       where: { id: appointmentId },

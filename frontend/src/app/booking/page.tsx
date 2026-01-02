@@ -258,41 +258,50 @@ export default function BookingPage() {
     );
   };
 
-  const handleBooking = async () => {
-    if (!selectedServices.length || selectedEmployee === undefined || !selectedDate || !selectedTime) {
-      alert('Please complete all selections');
-      return;
-    }
 
-    if (!consentToPolicies) {
-      alert('Please agree to the terms and conditions before booking');
-      return;
-    }
+const handleBooking = async () => {
+  if (!selectedServices.length || selectedEmployee === undefined || !selectedDate || !selectedTime) {
+    alert('Please complete all selections');
+    return;
+  }
 
-    setIsBooking(true);
-    try {
-      const startTime = new Date(`${selectedDate}T${selectedTime}`);
-      const endTime = new Date(startTime.getTime() + getTotalDuration() * 60000);
+  if (!consentToPolicies) {
+    alert('Please agree to the terms and conditions before booking');
+    return;
+  }
 
-      const response = await api.post('/appointments', {
-        clientId: user?.id,
-        employeeId: selectedEmployee,
-        startTime: startTime.toISOString(),
-        endTime: endTime.toISOString(),
-        serviceIds: selectedServices,
-        bookingSource: 'WEB',
-        clientTimezone: userTimezone,
-        notes: clientNotes || undefined,
-      });
+  // Validate that the selected time is not in the past
+  const startTime = new Date(`${selectedDate}T${selectedTime}`);
+  const now = new Date();
+  if (startTime <= now) {
+    alert('You cannot book appointments in the past. Please select a future date and time.');
+    setSelectedTime('');
+    return;
+  }
 
-      setStep(3);
-    } catch (error: any) {
-      console.error('Booking failed:', error);
-      alert(error.response?.data?.message || 'Booking failed. Please try again.');
-    } finally {
-      setIsBooking(false);
-    }
-  };
+  setIsBooking(true);
+  try {
+    const endTime = new Date(startTime.getTime() + getTotalDuration() * 60000);
+
+    const response = await api.post('/appointments', {
+      clientId: user?.id,
+      employeeId: selectedEmployee,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      serviceIds: selectedServices,
+      bookingSource: 'WEB',
+      clientTimezone: userTimezone,
+      notes: clientNotes || undefined,
+    });
+
+    setStep(3);
+  } catch (error: any) {
+    console.error('Booking failed:', error);
+    alert(error.response?.data?.message || 'Booking failed. Please try again.');
+  } finally {
+    setIsBooking(false);
+  }
+}; // <-- This closing brace was missing
 
   if (!user) {
     return (
@@ -644,21 +653,25 @@ export default function BookingPage() {
                             });
                             const isSelected = selectedTime === timeStr;
                             const isNextAvail = slot.isNextAvailable;
+                            const isPastSlot = new Date(slot.start) <= new Date();
 
                             return (
                               <button
                                 key={idx}
-                                onClick={() => setSelectedTime(timeStr)}
+                                onClick={() => !isPastSlot && setSelectedTime(timeStr)}
+                                disabled={isPastSlot}
                                 className={`p-2 rounded-lg border-2 font-semibold transition-all text-sm ${
-                                  isSelected
+                                  isPastSlot
+                                    ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : isSelected
                                     ? 'border-purple-600 bg-purple-600 text-white shadow-lg'
                                     : isNextAvail
                                     ? 'border-green-500 bg-green-50 text-gray-900 hover:bg-green-100'
                                     : 'border-gray-300 hover:border-purple-500 text-gray-900'
                                 }`}
-                                title={isNextAvail ? 'Next available slot' : undefined}
+                                title={isPastSlot ? 'This time has already passed' : isNextAvail ? 'Next available slot' : undefined}
                               >
-                                {isNextAvail && <span className="block text-xs">⭐</span>}
+                                {isNextAvail && !isPastSlot && <span className="block text-xs">⭐</span>}
                                 {timeStr}
                               </button>
                             );

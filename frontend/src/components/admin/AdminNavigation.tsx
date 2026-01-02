@@ -2,9 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/store/auth';
 
 export default function AdminNavigation() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout } = useAuthStore();
 
   const isActive = (href: string) => pathname === href;
 
@@ -44,7 +48,20 @@ export default function AdminNavigation() {
         ))}
       </ul>
 
-      <div className="p-4 border-t border-slate-700 text-sm text-slate-400">
+      <div className="p-4 border-t border-slate-700">
+        <button
+          onClick={() => {
+            logout();
+            router.push('/login');
+          }}
+          className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+        >
+          <span>🚪</span>
+          <span>Logout</span>
+        </button>
+      </div>
+
+      <div className="px-4 py-3 border-t border-slate-700 text-sm text-slate-400">
         <p>© 2026 Salon Booking</p>
       </div>
     </nav>

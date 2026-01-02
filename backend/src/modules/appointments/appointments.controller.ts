@@ -61,12 +61,23 @@ export class AppointmentsController {
   }
 
   @Put(':id')
-  async rescheduleAppointment(@Param('id') id: string, @Body() data: any) {
-    return this.appointmentsService.rescheduleAppointment(
-      id,
-      new Date(data.newStartTime),
-      new Date(data.newEndTime),
-    );
+  async updateAppointment(@Param('id') id: string, @Body() data: any) {
+    // Handle both rescheduling (newStartTime/newEndTime) and full updates (startTime/endTime)
+    const startTime = data.startTime || data.newStartTime;
+    const endTime = data.endTime || data.newEndTime;
+    
+    return this.appointmentsService.updateAppointment(id, {
+      startTime: typeof startTime === 'string' ? new Date(startTime) : startTime,
+      endTime: typeof endTime === 'string' ? new Date(endTime) : endTime,
+      clientFirstName: data.clientFirstName,
+      clientLastName: data.clientLastName,
+      clientEmail: data.clientEmail,
+      clientPhone: data.clientPhone,
+      employeeId: data.employeeId,
+      serviceIds: data.serviceIds,
+      status: data.status,
+      notes: data.notes,
+    });
   }
 
   @Delete(':id')

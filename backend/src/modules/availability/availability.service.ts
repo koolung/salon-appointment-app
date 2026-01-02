@@ -39,45 +39,72 @@ export class AvailabilityService {
     startTime: Date | string,
     endTime: Date | string,
   ): Promise<boolean> {
-    // Convert to Date objects if they're strings
-    const startTimeDate = typeof startTime === 'string' ? new Date(startTime) : startTime;
-    const endTimeDate = typeof endTime === 'string' ? new Date(endTime) : endTime;
+    try {
+      // Convert to Date objects if they're strings
+      let startTimeDate = typeof startTime === 'string' ? new Date(startTime) : startTime;
+      let endTimeDate = typeof endTime === 'string' ? new Date(endTime) : endTime;
 
-    // Use LOCAL time for consistency with how availability rules are stored
-    const dayOfWeek = startTimeDate.getDay();
-    const startTimeStr = `${String(startTimeDate.getHours()).padStart(2, '0')}:${String(startTimeDate.getMinutes()).padStart(2, '0')}`;
-    const endTimeStr = `${String(endTimeDate.getHours()).padStart(2, '0')}:${String(endTimeDate.getMinutes()).padStart(2, '0')}`;
+      // Validate dates
+      if (isNaN(startTimeDate.getTime())) {
+        console.error('Invalid startTime:', startTime);
+        return false;
+      }
+      if (isNaN(endTimeDate.getTime())) {
+        console.error('Invalid endTime:', endTime);
+        return false;
+      }
 
-    // Check for exception rules first
-    const exceptionRule = await this.prisma.availabilityRule.findFirst({
-      where: {
-        employeeId,
-        isException: true,
-        exceptionDate: {
-          gte: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate()),
-          lt: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate() + 1),
+      // Use LOCAL time for consistency with how availability rules are stored
+      const dayOfWeek = startTimeDate.getDay();
+      const startTimeStr = `${String(startTimeDate.getHours()).padStart(2, '0')}:${String(startTimeDate.getMinutes()).padStart(2, '0')}`;
+      const endTimeStr = `${String(endTimeDate.getHours()).padStart(2, '0')}:${String(endTimeDate.getMinutes()).padStart(2, '0')}`;
+
+      // Create valid date objects for exception rule query
+      const exceptionDateStart = new Date(
+        startTimeDate.getFullYear(),
+        startTimeDate.getMonth(),
+        startTimeDate.getDate(),
+      );
+      const exceptionDateEnd = new Date(
+        startTimeDate.getFullYear(),
+        startTimeDate.getMonth(),
+        startTimeDate.getDate() + 1,
+      );
+
+      // Check for exception rules first
+      const exceptionRule = await this.prisma.availabilityRule.findFirst({
+        where: {
+          employeeId,
+          isException: true,
+          exceptionDate: {
+            gte: exceptionDateStart,
+            lt: exceptionDateEnd,
+          },
         },
-      },
-    });
+      });
 
-    if (exceptionRule) {
-      return startTimeStr >= exceptionRule.startTime && endTimeStr <= exceptionRule.endTime;
-    }
+      if (exceptionRule) {
+        return startTimeStr >= exceptionRule.startTime && endTimeStr <= exceptionRule.endTime;
+      }
 
-    // Check weekly availability rules
-    const weeklyRule = await this.prisma.availabilityRule.findFirst({
-      where: {
-        employeeId,
-        dayOfWeek,
-        isException: false,
-      },
-    });
+      // Check weekly availability rules
+      const weeklyRule = await this.prisma.availabilityRule.findFirst({
+        where: {
+          employeeId,
+          dayOfWeek,
+          isException: false,
+        },
+      });
 
-    if (!weeklyRule) {
+      if (!weeklyRule) {
+        return false;
+      }
+
+      return startTimeStr >= weeklyRule.startTime && endTimeStr <= weeklyRule.endTime;
+    } catch (error) {
+      console.error('Error checking availability:', error);
       return false;
     }
-
-    return startTimeStr >= weeklyRule.startTime && endTimeStr <= weeklyRule.endTime;
   }
 
   /**
