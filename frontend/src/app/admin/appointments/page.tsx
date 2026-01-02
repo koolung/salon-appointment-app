@@ -106,6 +106,26 @@ export default function AppointmentsPage() {
     notes: string;
   } | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentData, setPaymentData] = useState({
+    discount: '',
+    discountType: 'percentage' as 'percentage' | 'dollar',
+    tax: 14,
+    tip: '',
+    paymentType: 'cash' as 'cash' | 'card' | 'giftcard' | 'membership',
+    soldBy: '',
+  });
+  const [isViewingPayment, setIsViewingPayment] = useState(false);
+  const [isEditingPayment, setIsEditingPayment] = useState(false);
+  const [appointmentPayment, setAppointmentPayment] = useState<any>(null);
+  const [editPaymentData, setEditPaymentData] = useState({
+    discount: '',
+    discountType: 'percentage' as 'percentage' | 'dollar',
+    tax: 14,
+    tip: '',
+    paymentType: 'cash' as 'cash' | 'card' | 'giftcard' | 'membership',
+    soldBy: '',
+  });
   const [timeRangeStart, setTimeRangeStart] = useState<number>(9); // 9 AM default
   const [timeRangeEnd, setTimeRangeEnd] = useState<number>(17); // 5 PM default
 
@@ -146,6 +166,38 @@ export default function AppointmentsPage() {
 
     fetchData();
   }, []);
+
+  const loadAppointments = async () => {
+    try {
+      const aptsRes = await api.get('/appointments');
+      setAppointments(aptsRes.data || []);
+    } catch (error) {
+      console.error('Failed to refresh appointments:', error);
+    }
+  };
+
+  // Fetch payment details when appointment is selected
+  useEffect(() => {
+    if (selectedAppointment) {
+      const fetchPayment = async () => {
+        try {
+          const response = await api.get(`/payments/appointment/${selectedAppointment.id}`);
+          const payments = response.data;
+          if (payments && payments.length > 0) {
+            setAppointmentPayment(payments[0]);
+          } else {
+            setAppointmentPayment(null);
+          }
+        } catch (error) {
+          console.error('Failed to fetch payment:', error);
+          setAppointmentPayment(null);
+        }
+      };
+      fetchPayment();
+    } else {
+      setAppointmentPayment(null);
+    }
+  }, [selectedAppointment?.id]);
 
   const applyAllFilters = (apts: Appointment[]) => {
     let filtered = apts;
@@ -219,6 +271,15 @@ export default function AppointmentsPage() {
     return new Date(d.setDate(diff));
   };
 
+  const formatForDatetimeLocal = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const handleStartEditAppointment = () => {
     if (!selectedAppointment) return;
     
@@ -231,14 +292,40 @@ export default function AppointmentsPage() {
       clientLastName: selectedAppointment.client?.user?.lastName || '',
       clientEmail: selectedAppointment.client?.user?.email || '',
       clientPhone: selectedAppointment.client?.user?.phone || '',
-      startTime: startDateTime.toISOString().slice(0, 16), // For datetime-local input
-      endTime: endDateTime.toISOString().slice(0, 16),
+      startTime: formatForDatetimeLocal(startDateTime),
+      endTime: formatForDatetimeLocal(endDateTime),
       employeeId: selectedAppointment.employee?.id || '',
       serviceIds: selectedAppointment.services?.map(s => s.service?.id).filter(Boolean) as string[] || [],
       status: selectedAppointment.status || 'PENDING',
       notes: selectedAppointment.notes || '',
     });
     setIsEditingAppointment(true);
+  };
+
+  const handleViewPayment = async () => {
+    if (!selectedAppointment) return;
+    
+    try {
+      const response = await api.get(`/payments/appointment/${selectedAppointment.id}`);
+      const payments = response.data;
+      if (payments && payments.length > 0) {
+        // Get the most recent payment
+        const payment = payments[0];
+        setAppointmentPayment(payment);
+        setEditPaymentData({
+          discount: '',
+          discountType: 'percentage' as 'percentage' | 'dollar',
+          tax: 14,
+          tip: '',
+          paymentType: 'cash' as 'cash' | 'card' | 'giftcard' | 'membership',
+          soldBy: '',
+        });
+        setIsViewingPayment(true);
+      }
+    } catch (error) {
+      console.error('Failed to fetch payment:', error);
+      alert('Failed to fetch payment details');
+    }
   };
 
   const handleCancelEdit = () => {
@@ -276,6 +363,26 @@ export default function AppointmentsPage() {
       alert(error.response?.data?.message || 'Failed to update appointment');
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteAppointment = async () => {
+    if (!selectedAppointment) return;
+
+    if (!confirm(`Are you sure you want to delete this appointment for ${selectedAppointment.client?.user?.firstName} ${selectedAppointment.client?.user?.lastName}?`)) {
+      return;
+    }
+
+    try {
+      await api.delete(`/appointments/${selectedAppointment.id}`);
+      
+      // Remove from local state
+      setAppointments(appointments.filter(apt => apt.id !== selectedAppointment.id));
+      setSelectedAppointment(null);
+      alert('Appointment deleted successfully!');
+    } catch (error: any) {
+      console.error('Failed to delete appointment:', error);
+      alert(error.response?.data?.message || 'Failed to delete appointment');
     }
   };
 
@@ -558,11 +665,87 @@ export default function AppointmentsPage() {
     AI: '🤖 AI',
   };
 
+  const calculatePaymentTotals = () => {
+    if (!selectedAppointment?.services) return { subtotal: 0, discount: 0, taxAmount: 0, tip: 0, total: 0 };
+    
+    const subtotal = selectedAppointment.services.reduce((sum, s) => sum + ((s as any).price || 0), 0);
+    const discountValue = paymentData.discount === '' ? 0 : parseFloat(paymentData.discount as any) || 0;
+    const tipValue = paymentData.tip === '' ? 0 : parseFloat(paymentData.tip as any) || 0;
+    const discountAmount = paymentData.discountType === 'percentage' 
+      ? (subtotal * discountValue) / 100 
+      : discountValue;
+    const discountedSubtotal = subtotal - discountAmount;
+    const taxAmount = (discountedSubtotal * paymentData.tax) / 100;
+    const total = discountedSubtotal + taxAmount + tipValue;
+    
+    return {
+      subtotal,
+      discount: discountAmount,
+      taxAmount,
+      tip: tipValue,
+      total,
+    };
+  };
+
+  const handleTakePayment = async () => {
+    if (!selectedAppointment) return;
+    
+    const totals = calculatePaymentTotals();
+    
+    try {
+      // Send payment to backend using api client
+      const response = await api.post('/payments', {
+        appointmentId: selectedAppointment.id,
+        amount: totals.total,
+        subtotal: totals.subtotal,
+        discount: totals.discount,
+        discountType: paymentData.discountType,
+        tax: paymentData.tax,
+        taxAmount: totals.taxAmount,
+        tip: totals.tip,
+        paymentType: paymentData.paymentType,
+        soldBy: paymentData.soldBy,
+        status: 'completed',
+      });
+
+      alert(`✓ Payment recorded successfully!\n\nAmount: $${totals.total.toFixed(2)}\nPayment Type: ${paymentData.paymentType.toUpperCase()}\n\nThank you!`);
+      
+      // Close payment modal and appointment modal, then refresh
+      setIsPaymentModalOpen(false);
+      setSelectedAppointment(null);
+      
+      // Refresh appointments list to update status if needed
+      loadAppointments();
+      
+      // Reset payment data
+      setPaymentData({
+        discount: '',
+        discountType: 'percentage' as 'percentage' | 'dollar',
+        tax: 14,
+        tip: '',
+        paymentType: 'cash' as 'cash' | 'card' | 'giftcard' | 'membership',
+        soldBy: '',
+      });
+    } catch (error) {
+      console.error('Failed to record payment:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Error recording payment: ${errorMessage}`);
+    }
+  };
+
   return (
     <AdminLayout>
       {/* Appointment Detail Modal - Editable */}
       {selectedAppointment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto pt-8"
+          onClick={(e) => {
+            // Close modal only if clicking on the backdrop itself, not the modal content
+            if (e.target === e.currentTarget) {
+              setSelectedAppointment(null);
+            }
+          }}
+        >
           <div className="bg-white rounded-lg max-w-3xl w-full my-8">
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-start justify-between border-b border-slate-200">
@@ -881,16 +1064,385 @@ export default function AppointmentsPage() {
                   {/* Action Button - VIEW MODE */}
                   <div className="flex gap-3 sticky bottom-0 bg-white pt-4 border-t">
                     <button
-                      onClick={() => setSelectedAppointment(null)}
-                      className="flex-1 px-4 py-2 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
-                    >
-                      Close
-                    </button>
-                    <button
                       onClick={handleStartEditAppointment}
                       className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium transition-colors"
                     >
                       ✏️ Edit Appointment
+                    </button>
+                    <button
+                      onClick={handleDeleteAppointment}
+                      className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
+                    >
+                      🗑️ Delete
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (appointmentPayment) {
+                          setIsViewingPayment(true);
+                        } else {
+                          setIsPaymentModalOpen(true);
+                        }
+                      }}
+                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors"
+                    >
+                      💳 {appointmentPayment ? 'View Payment' : 'Take Payment'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Modal */}
+      {isPaymentModalOpen && selectedAppointment && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto pt-8"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsPaymentModalOpen(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-lg max-w-2xl w-full my-8">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 flex items-start justify-between border-b border-slate-200">
+              <div>
+                <h2 className="text-2xl font-bold">Process Payment</h2>
+                <p className="text-green-100 mt-1">
+                  {selectedAppointment.client?.user ? `${selectedAppointment.client.user.firstName} ${selectedAppointment.client.user.lastName}` : 'Client'}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsPaymentModalOpen(false)}
+                className="text-white hover:text-green-100 text-2xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Services Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">🛎️ Services</h3>
+                <div className="space-y-2">
+                  {selectedAppointment.services && selectedAppointment.services.length > 0 ? (
+                    selectedAppointment.services.map((service, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-white rounded border border-slate-200">
+                        <span className="text-slate-900 font-medium">{service.service?.name || 'Service'}</span>
+                        <span className="text-slate-700 font-semibold">${((service as any).price || 0).toFixed(2)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-slate-500 text-sm">No services added</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Subtotal */}
+              <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-900 font-semibold">Subtotal:</span>
+                  <span className="text-blue-700 font-bold text-lg">
+                    ${calculatePaymentTotals().subtotal.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Discount Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">💰 Discount</h3>
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Amount</label>
+                    <input
+                      type="number"
+                      value={paymentData.discount}
+                      onChange={(e) => setPaymentData({ ...paymentData, discount: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="0"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                    <select
+                      value={paymentData.discountType}
+                      onChange={(e) => setPaymentData({ ...paymentData, discountType: e.target.value as 'percentage' | 'dollar' })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                    >
+                      <option value="percentage">Percentage (%)</option>
+                      <option value="dollar">Dollar ($)</option>
+                    </select>
+                  </div>
+                  <div className="px-4 py-2 bg-orange-100 text-orange-800 rounded-lg font-semibold min-w-24 text-right">
+                    -${calculatePaymentTotals().discount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tax Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">📊 Tax</h3>
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Tax Rate (%)</label>
+                    <input
+                      type="number"
+                      value={paymentData.tax}
+                      onChange={(e) => setPaymentData({ ...paymentData, tax: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="14"
+                      min="0"
+                      step="0.01"
+                    />
+                  </div>
+                  <div className="px-4 py-2 bg-red-100 text-red-800 rounded-lg font-semibold min-w-24 text-right">
+                    +${calculatePaymentTotals().taxAmount.toFixed(2)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tips Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">💵 Tip</h3>
+                <input
+                  type="number"
+                  value={paymentData.tip}
+                  onChange={(e) => setPaymentData({ ...paymentData, tip: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+
+              {/* Sold By Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">👤 Sold By</h3>
+                <select
+                  value={paymentData.soldBy}
+                  onChange={(e) => setPaymentData({ ...paymentData, soldBy: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Select a stylist...</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.user?.firstName} {emp.user?.lastName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Payment Type Section */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">🏦 Payment Method</h3>
+                <select
+                  value={paymentData.paymentType}
+                  onChange={(e) => setPaymentData({ ...paymentData, paymentType: e.target.value as 'cash' | 'card' | 'giftcard' | 'membership' })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="cash">💰 Cash</option>
+                  <option value="card">💳 Credit/Debit Card</option>
+                  <option value="giftcard">🎁 Gift Card</option>
+                  <option value="membership">⭐ Membership Points</option>
+                </select>
+              </div>
+
+              {/* Totals Summary */}
+              <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-6 border-2 border-green-300">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-700">Subtotal:</span>
+                    <span className="text-slate-900 font-semibold">${calculatePaymentTotals().subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-700">Discount:</span>
+                    <span className="text-orange-700 font-semibold">-${calculatePaymentTotals().discount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-700">Tax ({paymentData.tax}%):</span>
+                    <span className="text-red-700 font-semibold">+${calculatePaymentTotals().taxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-700">Tip:</span>
+                    <span className="text-blue-700 font-semibold">+${calculatePaymentTotals().tip.toFixed(2)}</span>
+                  </div>
+                  <div className="border-t-2 border-green-300 pt-3 flex justify-between items-center">
+                    <span className="text-lg font-bold text-green-900">Total:</span>
+                    <span className="text-3xl font-bold text-green-700">
+                      ${calculatePaymentTotals().total.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsPaymentModalOpen(false)}
+                  className="flex-1 px-4 py-3 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleTakePayment}
+                  className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold transition-colors text-lg"
+                >
+                  ✓ Process Payment
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Payment Modal */}
+      {isViewingPayment && appointmentPayment && selectedAppointment && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 overflow-y-auto pt-8"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setIsViewingPayment(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-lg max-w-2xl w-full my-8">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-start justify-between border-b border-slate-200">
+              <div>
+                <h2 className="text-2xl font-bold">{isEditingPayment ? 'Edit Payment' : 'Payment Details'}</h2>
+                <p className="text-blue-100 mt-1">
+                  {selectedAppointment.client?.user ? `${selectedAppointment.client.user.firstName} ${selectedAppointment.client.user.lastName}` : 'Client'}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsViewingPayment(false);
+                  setIsEditingPayment(false);
+                }}
+                className="text-white hover:text-blue-100 text-2xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {!isEditingPayment ? (
+                <>
+                  {/* View Mode */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">💳 Payment Information</h3>
+                    <div className="space-y-2 text-slate-700">
+                      <div className="flex justify-between">
+                        <span>Amount:</span>
+                        <span className="font-semibold">${appointmentPayment.amount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Payment Method:</span>
+                        <span className="font-semibold capitalize">{appointmentPayment.method}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Status:</span>
+                        <span className="font-semibold">{appointmentPayment.status}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Payment Date:</span>
+                        <span className="font-semibold">
+                          {new Date(appointmentPayment.createdAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setIsViewingPayment(false)}
+                      className="flex-1 px-4 py-3 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={() => setIsEditingPayment(true)}
+                      className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold transition-colors"
+                    >
+                      ✏️ Edit Payment
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Edit Mode - Payment Summary */}
+                  <div className="bg-gradient-to-r from-green-50 to-green-100 rounded-lg p-6 border-2 border-green-300">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-700">Amount:</span>
+                        <span className="text-green-700 font-bold text-lg">${appointmentPayment.amount.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-700">Status:</span>
+                        <span className="text-green-700 font-semibold">{appointmentPayment.status}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Edit Form */}
+                  <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                    <h3 className="font-bold text-slate-900 mb-3">🏦 Payment Method</h3>
+                    <select
+                      value={editPaymentData.paymentType}
+                      onChange={(e) => setEditPaymentData({ ...editPaymentData, paymentType: e.target.value as 'cash' | 'card' | 'giftcard' | 'membership' })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="cash">💰 Cash</option>
+                      <option value="card">💳 Credit/Debit Card</option>
+                      <option value="giftcard">🎁 Gift Card</option>
+                      <option value="membership">⭐ Membership Points</option>
+                    </select>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setIsEditingPayment(false)}
+                      className="flex-1 px-4 py-3 bg-slate-300 text-slate-900 rounded-lg hover:bg-slate-400 font-medium transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!appointmentPayment) return;
+                        try {
+                          await api.put(`/payments/${appointmentPayment.id}`, {
+                            method: editPaymentData.paymentType === 'cash' ? 'CASH' : editPaymentData.paymentType === 'card' ? 'CARD' : 'CARD',
+                          });
+                          alert('Payment updated successfully');
+                          setIsEditingPayment(false);
+                          // Refresh payment data
+                          const response = await api.get(`/payments/appointment/${selectedAppointment.id}`);
+                          const payments = response.data;
+                          if (payments && payments.length > 0) {
+                            setAppointmentPayment(payments[0]);
+                          }
+                        } catch (error) {
+                          console.error('Failed to update payment:', error);
+                          alert('Failed to update payment');
+                        }
+                      }}
+                      className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold transition-colors"
+                    >
+                      ✓ Save Changes
                     </button>
                   </div>
                 </>
@@ -902,7 +1454,7 @@ export default function AppointmentsPage() {
 
       {/* Quick Add Appointment Modal */}
       {quickAddSlot && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center z-50 p-4 pt-8">
           <div className="bg-white rounded-lg max-w-md w-full">
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 flex items-start justify-between">

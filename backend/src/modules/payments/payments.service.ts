@@ -8,16 +8,39 @@ export class PaymentsService {
   async createPayment(data: {
     appointmentId: string;
     amount: number;
-    method: 'CASH' | 'CARD' | 'ONLINE';
+    subtotal?: number;
+    discount?: number;
+    discountType?: string;
+    tax?: number;
+    taxAmount?: number;
+    tip?: number;
+    paymentType?: string;
+    soldBy?: string;
+    status?: string;
+    method?: 'CASH' | 'CARD' | 'ONLINE';
     stripeId?: string;
   }) {
+    // Map paymentType to method, defaulting to CARD if not recognized
+    let method: 'CASH' | 'CARD' | 'ONLINE' = 'CARD';
+    if (data.paymentType) {
+      const typeMap: Record<string, 'CASH' | 'CARD' | 'ONLINE'> = {
+        'cash': 'CASH',
+        'card': 'CARD',
+        'giftcard': 'CARD',
+        'membership': 'CARD',
+      };
+      method = typeMap[data.paymentType.toLowerCase()] || 'CARD';
+    } else if (data.method) {
+      method = data.method;
+    }
+
     return this.prisma.payment.create({
       data: {
         appointmentId: data.appointmentId,
         amount: data.amount,
-        method: data.method,
+        method: method,
         stripeId: data.stripeId,
-        status: 'PENDING',
+        status: data.status || 'COMPLETED',
       },
     });
   }
@@ -32,6 +55,16 @@ export class PaymentsService {
     }
 
     return payment;
+  }
+
+  async updatePayment(paymentId: string, data: { method?: string; status?: string }) {
+    return this.prisma.payment.update({
+      where: { id: paymentId },
+      data: {
+        ...(data.method && { method: data.method }),
+        ...(data.status && { status: data.status }),
+      },
+    });
   }
 
   async getPaymentsByAppointment(appointmentId: string) {
