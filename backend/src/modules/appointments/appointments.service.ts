@@ -18,6 +18,10 @@ export class AppointmentsService {
     notes?: string;
     clientTimezone?: string;
     bookingSource?: string;
+    clientFirstName?: string;
+    clientLastName?: string;
+    clientEmail?: string;
+    clientPhone?: string;
   }) {
     let finalEmployeeId: string;
     let clientRecordId: string;
@@ -25,10 +29,31 @@ export class AppointmentsService {
     // Get or create client record from userId
     // For admin bookings, clientId is 'temp-admin-booking' so we create a temporary client
     if (data.clientId === 'temp-admin-booking') {
-      // Create a temporary client without userId (for admin-booked appointments)
+      // Create user first if we have client info
+      let userId: string | null = null;
+      
+      if (data.clientFirstName || data.clientEmail) {
+        // Generate a unique email if not provided
+        const email = data.clientEmail || 
+          `admin-booked-${Date.now()}@noemail.local`;
+        
+        const user = await this.prisma.user.create({
+          data: {
+            email,
+            password: '', // Admin-created accounts have no password initially
+            firstName: data.clientFirstName || 'Guest',
+            lastName: data.clientLastName || 'Client',
+            phone: data.clientPhone,
+            role: 'CLIENT',
+          },
+        });
+        userId = user.id;
+      }
+
+      // Create a client record
       const clientRecord = await this.prisma.client.create({
         data: {
-          userId: null, // Allow null for admin-created clients
+          userId, // Can be null if no client info provided
         },
       });
       clientRecordId = clientRecord.id;

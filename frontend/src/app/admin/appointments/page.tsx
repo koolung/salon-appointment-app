@@ -111,8 +111,10 @@ export default function AppointmentsPage() {
 
   // Quick add appointment state
   const [quickAddSlot, setQuickAddSlot] = useState<{ date: Date; hour: number; minute: number; employeeId: string } | null>(null);
-  const [quickAddClientName, setQuickAddClientName] = useState('');
-  const [quickAddPhone, setQuickAddPhone] = useState('');
+  const [quickAddClientFirstName, setQuickAddClientFirstName] = useState('');
+  const [quickAddClientLastName, setQuickAddClientLastName] = useState('');
+  const [quickAddClientEmail, setQuickAddClientEmail] = useState('');
+  const [quickAddClientPhone, setQuickAddClientPhone] = useState('');
   const [quickAddServiceIds, setQuickAddServiceIds] = useState<string[]>([]);
   const [quickAddDuration, setQuickAddDuration] = useState(60);
   const [isCreatingAppointment, setIsCreatingAppointment] = useState(false);
@@ -283,6 +285,11 @@ export default function AppointmentsPage() {
       return;
     }
 
+    if (!quickAddClientFirstName.trim() || !quickAddClientLastName.trim()) {
+      alert('Please enter client first and last name');
+      return;
+    }
+
     setIsCreatingAppointment(true);
     try {
       const startTime = new Date(
@@ -296,13 +303,17 @@ export default function AppointmentsPage() {
       const endTime = new Date(startTime.getTime() + quickAddDuration * 60 * 1000);
 
       const response = await api.post('/appointments', {
-        clientId: 'temp-admin-booking', // Will be handled by backend
+        clientId: 'temp-admin-booking',
         employeeId: quickAddSlot.employeeId,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         serviceIds: quickAddServiceIds,
         bookingSource: 'ADMIN',
-        notes: `Admin booked for ${quickAddClientName}${quickAddPhone ? ' - ' + quickAddPhone : ''}`,
+        clientFirstName: quickAddClientFirstName,
+        clientLastName: quickAddClientLastName,
+        clientEmail: quickAddClientEmail,
+        clientPhone: quickAddClientPhone,
+        notes: '',
       });
 
       // Refresh appointments
@@ -311,8 +322,10 @@ export default function AppointmentsPage() {
 
       // Clear the quick add form
       setQuickAddSlot(null);
-      setQuickAddClientName('');
-      setQuickAddPhone('');
+      setQuickAddClientFirstName('');
+      setQuickAddClientLastName('');
+      setQuickAddClientEmail('');
+      setQuickAddClientPhone('');
       setQuickAddServiceIds([]);
       setQuickAddDuration(60);
 
@@ -913,16 +926,44 @@ export default function AppointmentsPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Client Name */}
+              {/* Client First Name */}
               <div>
                 <label className="block text-sm font-medium text-slate-900 mb-1">
-                  Client Name
+                  First Name *
                 </label>
                 <input
                   type="text"
-                  value={quickAddClientName}
-                  onChange={(e) => setQuickAddClientName(e.target.value)}
-                  placeholder="Client name"
+                  value={quickAddClientFirstName}
+                  onChange={(e) => setQuickAddClientFirstName(e.target.value)}
+                  placeholder="Client first name"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                />
+              </div>
+
+              {/* Client Last Name */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-1">
+                  Last Name *
+                </label>
+                <input
+                  type="text"
+                  value={quickAddClientLastName}
+                  onChange={(e) => setQuickAddClientLastName(e.target.value)}
+                  placeholder="Client last name"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                />
+              </div>
+
+              {/* Client Email */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-1">
+                  Email (Optional)
+                </label>
+                <input
+                  type="email"
+                  value={quickAddClientEmail}
+                  onChange={(e) => setQuickAddClientEmail(e.target.value)}
+                  placeholder="client@example.com"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
               </div>
@@ -934,8 +975,8 @@ export default function AppointmentsPage() {
                 </label>
                 <input
                   type="tel"
-                  value={quickAddPhone}
-                  onChange={(e) => setQuickAddPhone(e.target.value)}
+                  value={quickAddClientPhone}
+                  onChange={(e) => setQuickAddClientPhone(e.target.value)}
                   placeholder="Phone number"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
