@@ -12,7 +12,13 @@ export class AppointmentsController {
 
   @Post()
   async createAppointment(@Body() data: any, @Request() req: any) {
-    return this.appointmentsService.createAppointment(data);
+    // Convert ISO string dates to Date objects if needed
+    const appointmentData = {
+      ...data,
+      startTime: typeof data.startTime === 'string' ? new Date(data.startTime) : data.startTime,
+      endTime: typeof data.endTime === 'string' ? new Date(data.endTime) : data.endTime,
+    };
+    return this.appointmentsService.createAppointment(appointmentData);
   }
 
   @Get('my')

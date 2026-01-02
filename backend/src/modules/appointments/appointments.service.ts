@@ -11,50 +11,104 @@ export class AppointmentsService {
 
   async createAppointment(data: {
     clientId: string;
-    employeeId: string;
+    employeeId: string | null;
     startTime: Date;
     endTime: Date;
     serviceIds: string[];
     notes?: string;
+    clientTimezone?: string;
+    bookingSource?: string;
   }) {
-    // Validate that employee is available
-    const isAvailable = await this.availabilityService.checkAvailability(
-      data.employeeId,
-      data.startTime,
-      data.endTime,
-    );
+    let finalEmployeeId: string;
 
-    if (!isAvailable) {
-      throw new BadRequestException('Selected time slot is not available');
-    }
+    // If no preference, find an available employee for this time slot
+    if (!data.employeeId) {
+      const employees = await this.prisma.employee.findMany({
+        where: { isActive: true },
+      });
 
-    // Check for conflicts
-    const conflict = await this.prisma.appointment.findFirst({
-      where: {
-        employeeId: data.employeeId,
-        status: {
-          in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'],
-        },
-        OR: [
-          {
-            startTime: { lt: data.endTime },
-            endTime: { gt: data.startTime },
+      // Check each employee for availability
+      let availableEmployee: any = null;
+      for (const emp of employees) {
+        const isAvailable = await this.availabilityService.checkAvailability(
+          emp.id,
+          data.startTime,
+          data.endTime,
+        );
+
+        if (isAvailable) {
+          // Check for conflicts
+          const conflict = await this.prisma.appointment.findFirst({
+            where: {
+              employeeId: emp.id,
+              status: {
+                in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'],
+              },
+              OR: [
+                {
+                  startTime: { lt: data.endTime },
+                  endTime: { gt: data.startTime },
+                },
+              ],
+            },
+          });
+
+          if (!conflict) {
+            availableEmployee = emp;
+            break;
+          }
+        }
+      }
+
+      if (!availableEmployee) {
+        throw new BadRequestException('No employees available for the selected time slot');
+      }
+
+      finalEmployeeId = availableEmployee.id;
+    } else {
+      finalEmployeeId = data.employeeId;
+
+      // Validate that employee is available
+      const isAvailable = await this.availabilityService.checkAvailability(
+        finalEmployeeId,
+        data.startTime,
+        data.endTime,
+      );
+
+      if (!isAvailable) {
+        throw new BadRequestException('Selected time slot is not available');
+      }
+
+      // Check for conflicts
+      const conflict = await this.prisma.appointment.findFirst({
+        where: {
+          employeeId: finalEmployeeId,
+          status: {
+            in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'],
           },
-        ],
-      },
-    });
+          OR: [
+            {
+              startTime: { lt: data.endTime },
+              endTime: { gt: data.startTime },
+            },
+          ],
+        },
+      });
 
-    if (conflict) {
-      throw new BadRequestException('Time slot conflicts with existing appointment');
+      if (conflict) {
+        throw new BadRequestException('Time slot conflicts with existing appointment');
+      }
     }
 
     const appointment = await this.prisma.appointment.create({
       data: {
         clientId: data.clientId,
-        employeeId: data.employeeId,
+        employeeId: finalEmployeeId,
         startTime: data.startTime,
         endTime: data.endTime,
         notes: data.notes,
+        clientTimezone: data.clientTimezone || 'UTC',
+        bookingSource: data.bookingSource || 'WEB',
         status: 'PENDING',
         services: {
           create: await Promise.all(

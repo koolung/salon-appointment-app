@@ -30,9 +30,14 @@ export class AvailabilityController {
     @Param('employeeId') employeeId: string,
     @Query('date') date?: string,
     @Query('duration') duration?: string,
+    @Query('timezone') timezone?: string,
   ) {
     const slotDate = new Date(date || new Date());
     const slotDuration = parseInt(duration || '15', 10);
+    
+    // TODO: Use timezone parameter for future timezone conversion
+    // For now, store timezone for audit but use server-side dates
+    
     return this.availabilityService.getAvailableSlots(employeeId, slotDate, slotDuration);
   }
 

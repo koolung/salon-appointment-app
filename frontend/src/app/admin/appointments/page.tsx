@@ -9,18 +9,52 @@ interface Appointment {
   startTime: string;
   endTime: string;
   status: string;
+  bookingSource?: string;
+  notes?: string;
   client?: {
+    id: string;
     user?: {
       firstName: string;
       lastName: string;
+      phone?: string;
+      email?: string;
     };
   };
   employee?: {
+    id: string;
     user?: {
       firstName: string;
       lastName: string;
     };
   };
+  services?: Array<{
+    id: string;
+    service?: {
+      id: string;
+      name: string;
+    };
+  }>;
+  changes?: Array<{
+    id: string;
+    fieldName: string;
+    oldValue?: string;
+    newValue?: string;
+    changedBy?: string;
+    createdAt: string;
+  }>;
+}
+
+interface Employee {
+  id: string;
+  user?: {
+    firstName: string;
+    lastName: string;
+  };
+}
+
+interface Service {
+  id: string;
+  name: string;
 }
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -43,25 +77,89 @@ type ViewMode = 'daily' | 'weekly' | 'monthly' | 'list';
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('monthly');
+  const [viewMode, setViewMode] = useState<ViewMode>('daily');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  
+  // Filter states
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Detail modal state
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
+  const APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+  const BOOKING_SOURCES = ['ADMIN', 'WEB', 'PHONE', 'AI'];
 
   useEffect(() => {
-    const fetchAppointments = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get('/appointments');
-        setAppointments(res.data || []);
+        const [aptsRes, empsRes, secsRes] = await Promise.all([
+          api.get('/appointments'),
+          api.get('/employees'),
+          api.get('/services'),
+        ]);
+        setAppointments(aptsRes.data || []);
+        setEmployees(empsRes.data || []);
+        setServices(secsRes.data || []);
+        // Set default to first employee if available
+        if (empsRes.data && empsRes.data.length > 0) {
+          setSelectedEmployeeId(empsRes.data[0].id);
+        }
       } catch (error) {
-        console.error('Failed to fetch appointments:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchAppointments();
+    fetchData();
   }, []);
+
+  const applyAllFilters = (apts: Appointment[]) => {
+    let filtered = apts;
+
+    // Filter by employee (except in list view with no specific employee selected)
+    if (selectedEmployeeId && viewMode !== 'list') {
+      filtered = filtered.filter((apt) => apt.employee?.id === selectedEmployeeId);
+    } else if (selectedEmployeeId && viewMode === 'list') {
+      // In list view, allow filtering by specific employee or show all
+      filtered = filtered.filter((apt) => apt.employee?.id === selectedEmployeeId);
+    }
+
+    // Filter by service
+    if (selectedServiceId) {
+      filtered = filtered.filter((apt) =>
+        apt.services?.some((s) => s.service?.id === selectedServiceId)
+      );
+    }
+
+    // Filter by status
+    if (selectedStatus) {
+      filtered = filtered.filter((apt) => apt.status === selectedStatus);
+    }
+
+    // Search by client name or phone
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((apt) => {
+        const clientName = `${apt.client?.user?.firstName || ''} ${apt.client?.user?.lastName || ''}`.toLowerCase();
+        const clientPhone = (apt.client?.user?.phone || '').toLowerCase();
+        return clientName.includes(query) || clientPhone.includes(query);
+      });
+    }
+
+    return filtered;
+  };
+
+  const filterByEmployee = (apts: Appointment[]) => {
+    return applyAllFilters(apts);
+  };
 
   const getDaysInMonth = (date: Date) => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -72,7 +170,8 @@ export default function AppointmentsPage() {
   };
 
   const getAppointmentsForDate = (date: Date) => {
-    return appointments.filter((apt) => {
+    const filtered = filterByEmployee(appointments);
+    return filtered.filter((apt) => {
       const aptDate = new Date(apt.startTime);
       return (
         aptDate.getDate() === date.getDate() &&
@@ -99,7 +198,8 @@ export default function AppointmentsPage() {
     const weekStart = getWeekStart(selectedDate);
     const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
     
-    return appointments.filter((apt) => {
+    const filtered = filterByEmployee(appointments);
+    return filtered.filter((apt) => {
       const aptDate = new Date(apt.startTime);
       return aptDate >= weekStart && aptDate < weekEnd;
     });
@@ -159,8 +259,182 @@ export default function AppointmentsPage() {
     CANCELLED: 'bg-red-100 text-red-800',
   };
 
+  const bookingSourceLabels: Record<string, string> = {
+    ADMIN: '👨‍💼 Admin',
+    WEB: '🌐 Website',
+    PHONE: '☎️ Phone',
+    AI: '🤖 AI',
+  };
+
   return (
     <AdminLayout>
+      {/* Appointment Detail Modal */}
+      {selectedAppointment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-start justify-between border-b border-slate-200">
+              <div>
+                <h2 className="text-2xl font-bold">Appointment Details</h2>
+                <p className="text-blue-100 mt-1">
+                  {new Date(selectedAppointment.startTime).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })}
+                </p>
+              </div>
+              <button
+                onClick={() => setSelectedAppointment(null)}
+                className="text-white hover:bg-blue-800 rounded-lg p-2 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Client Contact Info */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">👤 Client Contact Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-slate-600">Name</p>
+                    <p className="font-semibold text-slate-900">
+                      {selectedAppointment.client?.user?.firstName}{' '}
+                      {selectedAppointment.client?.user?.lastName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Email</p>
+                    <p className="font-semibold text-slate-900">
+                      {selectedAppointment.client?.user?.email || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Phone</p>
+                    <p className="font-semibold text-slate-900">
+                      {selectedAppointment.client?.user?.phone || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Client ID</p>
+                    <p className="font-mono text-sm text-slate-900">{selectedAppointment.client?.id}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Appointment Info */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">📅 Appointment Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-slate-600">Date & Time</p>
+                    <p className="font-semibold text-slate-900">
+                      {new Date(selectedAppointment.startTime).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {' - '}
+                      {new Date(selectedAppointment.endTime).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Staff Member</p>
+                    <p className="font-semibold text-slate-900">
+                      {selectedAppointment.employee?.user?.firstName}{' '}
+                      {selectedAppointment.employee?.user?.lastName}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Services</p>
+                    <p className="font-semibold text-slate-900">
+                      {selectedAppointment.services && selectedAppointment.services.length > 0
+                        ? selectedAppointment.services.map((s) => s.service?.name).join(', ')
+                        : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Status</p>
+                    <span
+                      className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                        statusColors[selectedAppointment.status] || 'bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      {selectedAppointment.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Booking Source & Notes */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <h3 className="font-bold text-slate-900 mb-3">📝 Booking Details</h3>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-slate-600">Booking Source</p>
+                    <p className="font-semibold text-slate-900">
+                      {bookingSourceLabels[selectedAppointment.bookingSource || 'ADMIN'] ||
+                        selectedAppointment.bookingSource}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-600">Notes / Special Requests</p>
+                    <p className="font-semibold text-slate-900 whitespace-pre-wrap">
+                      {selectedAppointment.notes || 'No notes'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Change History */}
+              {selectedAppointment.changes && selectedAppointment.changes.length > 0 && (
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                  <h3 className="font-bold text-slate-900 mb-3">📋 Change History</h3>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {[...selectedAppointment.changes].reverse().map((change) => (
+                      <div key={change.id} className="bg-white p-3 rounded border border-slate-200">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-semibold text-slate-900 capitalize">
+                              {change.fieldName.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                            </p>
+                            <p className="text-sm text-slate-600 mt-1">
+                              Changed from{' '}
+                              <span className="font-mono bg-red-50 px-2 py-1 rounded">
+                                {change.oldValue || 'empty'}
+                              </span>{' '}
+                              to{' '}
+                              <span className="font-mono bg-green-50 px-2 py-1 rounded">
+                                {change.newValue || 'empty'}
+                              </span>
+                            </p>
+                          </div>
+                          <div className="text-right text-sm text-slate-500">
+                            <p>{change.changedBy || 'System'}</p>
+                            <p>
+                              {new Date(change.createdAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Header with View Toggle */}
         <div className="flex items-start justify-between">
@@ -168,7 +442,21 @@ export default function AppointmentsPage() {
             <h1 className="text-3xl font-bold text-slate-900">Appointment Calendar</h1>
             <p className="text-slate-600 mt-1">Manage all salon appointments</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {(viewMode === 'daily' || viewMode === 'weekly' || viewMode === 'monthly') && (
+              <select
+                value={selectedEmployeeId || ''}
+                onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
+                className="px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Employees</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.user?.firstName} {emp.user?.lastName}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => setViewMode('daily')}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
@@ -209,6 +497,97 @@ export default function AppointmentsPage() {
             >
               List
             </button>
+          </div>
+        </div>
+
+        {/* Filters Panel */}
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Search by Client Name/Phone */}
+            <div>
+              <label className="block text-sm font-medium text-slate-900 mb-1">
+                Search Client
+              </label>
+              <input
+                type="text"
+                placeholder="Name or phone..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              />
+            </div>
+
+            {/* Filter by Employee */}
+            <div>
+              <label className="block text-sm font-medium text-slate-900 mb-1">
+                Employee
+              </label>
+              <select
+                value={selectedEmployeeId || ''}
+                onChange={(e) => setSelectedEmployeeId(e.target.value || null)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Employees</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.user?.firstName} {emp.user?.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter by Service */}
+            <div>
+              <label className="block text-sm font-medium text-slate-900 mb-1">
+                Service
+              </label>
+              <select
+                value={selectedServiceId || ''}
+                onChange={(e) => setSelectedServiceId(e.target.value || null)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Services</option>
+                {services.map((svc) => (
+                  <option key={svc.id} value={svc.id}>
+                    {svc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter by Status */}
+            <div>
+              <label className="block text-sm font-medium text-slate-900 mb-1">
+                Status
+              </label>
+              <select
+                value={selectedStatus || ''}
+                onChange={(e) => setSelectedStatus(e.target.value || null)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Statuses</option>
+                {APPOINTMENT_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {status.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Clear Filters Button */}
+            <div className="flex items-end">
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedServiceId(null);
+                  setSelectedStatus(null);
+                  setSelectedEmployeeId(employees.length > 0 ? employees[0].id : null);
+                }}
+                className="w-full px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg font-medium transition-colors text-sm"
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
         </div>
 
@@ -286,7 +665,8 @@ export default function AppointmentsPage() {
                         return (
                           <div
                             key={apt.id}
-                            className="border border-slate-200 rounded-lg p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
+                            onClick={() => setSelectedAppointment(apt)}
+                            className="border border-slate-200 rounded-lg p-4 bg-slate-50 hover:bg-blue-50 transition-colors cursor-pointer"
                           >
                             <div className="flex items-start justify-between">
                               <div>
@@ -418,7 +798,8 @@ export default function AppointmentsPage() {
                                 return (
                                   <div
                                     key={apt.id}
-                                    className={`text-sm p-2 rounded ${
+                                    onClick={() => setSelectedAppointment(apt)}
+                                    className={`text-sm p-2 rounded cursor-pointer hover:opacity-80 transition-opacity ${
                                       statusColors[apt.status] ||
                                       'bg-slate-100 text-slate-800'
                                     }`}
@@ -522,7 +903,11 @@ export default function AppointmentsPage() {
                                 .map((apt) => (
                                   <div
                                     key={apt.id}
-                                    className="text-xs px-1 py-0.5 bg-blue-100 text-blue-800 rounded truncate"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedAppointment(apt);
+                                    }}
+                                    className="text-xs px-1 py-0.5 bg-blue-100 text-blue-800 rounded truncate cursor-pointer hover:bg-blue-200 transition-colors"
                                   >
                                     {new Date(apt.startTime).getHours()}:
                                     {String(
@@ -667,7 +1052,8 @@ export default function AppointmentsPage() {
                           return (
                             <tr
                               key={apt.id}
-                              className="border-b border-slate-200 hover:bg-slate-50 transition-colors"
+                              onClick={() => setSelectedAppointment(apt)}
+                              className="border-b border-slate-200 hover:bg-blue-50 transition-colors cursor-pointer"
                             >
                               <td className="px-4 py-3 text-sm text-slate-900">
                                 {startTime.toLocaleDateString('en-US', {

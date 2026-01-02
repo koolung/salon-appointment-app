@@ -36,16 +36,20 @@ export class AvailabilityService {
    */
   async checkAvailability(
     employeeId: string,
-    startTime: Date,
-    endTime: Date,
+    startTime: Date | string,
+    endTime: Date | string,
   ): Promise<boolean> {
-    const dayOfWeek = startTime.getDay();
-    const startTimeStr = startTime.toLocaleTimeString('en-US', {
+    // Convert to Date objects if they're strings
+    const startTimeDate = typeof startTime === 'string' ? new Date(startTime) : startTime;
+    const endTimeDate = typeof endTime === 'string' ? new Date(endTime) : endTime;
+
+    const dayOfWeek = startTimeDate.getDay();
+    const startTimeStr = startTimeDate.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
     });
-    const endTimeStr = endTime.toLocaleTimeString('en-US', {
+    const endTimeStr = endTimeDate.toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -57,8 +61,8 @@ export class AvailabilityService {
         employeeId,
         isException: true,
         exceptionDate: {
-          gte: new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate()),
-          lt: new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate() + 1),
+          gte: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate()),
+          lt: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate() + 1),
         },
       },
     });
@@ -85,6 +89,7 @@ export class AvailabilityService {
 
   /**
    * Get available time slots for an employee on a specific date
+   * Excludes slots that have existing appointments
    */
   async getAvailableSlots(
     employeeId: string,
@@ -92,7 +97,7 @@ export class AvailabilityService {
     slotDurationMinutes: number = 15,
   ) {
     const dayOfWeek = date.getDay();
-    const slots: { start: Date; end: Date }[] = [];
+    const slots: { start: string; end: string; isNextAvailable?: boolean }[] = [];
 
     // Get availability rules for this day
     const rules = await this.prisma.availabilityRule.findMany({
@@ -119,19 +124,51 @@ export class AvailabilityService {
     const [startHour, startMin] = rule.startTime.split(':').map(Number);
     const [endHour, endMin] = rule.endTime.split(':').map(Number);
 
+    // Fetch all appointments for this employee on this date
+    const appointments = await this.prisma.appointment.findMany({
+      where: {
+        employeeId,
+        startTime: {
+          gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
+          lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+        },
+      },
+    });
+
     let currentTime = new Date(date);
     currentTime.setHours(startHour, startMin, 0, 0);
 
     const endTime = new Date(date);
     endTime.setHours(endHour, endMin, 0, 0);
 
+    let isFirstAvailable = true;
+    const now = new Date();
+
     while (currentTime < endTime) {
       const slotEnd = new Date(currentTime.getTime() + slotDurationMinutes * 60000);
       if (slotEnd <= endTime) {
-        slots.push({
-          start: new Date(currentTime),
-          end: slotEnd,
-        });
+        // Check if this slot conflicts with any appointment
+        const isBooked = appointments.some(
+          (apt) =>
+            (currentTime >= apt.startTime && currentTime < apt.endTime) ||
+            (slotEnd > apt.startTime && slotEnd <= apt.endTime) ||
+            (currentTime <= apt.startTime && slotEnd >= apt.endTime),
+        );
+
+        if (!isBooked) {
+          const slotObj: any = {
+            start: currentTime.toISOString(),
+            end: slotEnd.toISOString(),
+          };
+
+          // Mark the first available slot (in the future)
+          if (isFirstAvailable && slotEnd > now) {
+            slotObj.isNextAvailable = true;
+            isFirstAvailable = false;
+          }
+
+          slots.push(slotObj);
+        }
       }
       currentTime = slotEnd;
     }
