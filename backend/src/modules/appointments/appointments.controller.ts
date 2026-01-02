@@ -1,13 +1,24 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { AppointmentsService } from './appointments.service';
+import { PrismaService } from '@/common/prisma/prisma.service';
+import { JwtGuard } from '@/common/guards/jwt.guard';
 
 @Controller('appointments')
 export class AppointmentsController {
-  constructor(private readonly appointmentsService: AppointmentsService) {}
+  constructor(
+    private readonly appointmentsService: AppointmentsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get('test')
   testEndpoint() {
     return { message: 'Appointments endpoint is working', status: 'ok' };
+  }
+
+  @Get()
+  async getAllAppointments() {
+    // Get all appointments (for admin/calendar view)
+    return this.appointmentsService.getAllAppointments();
   }
 
   @Post()
@@ -22,9 +33,26 @@ export class AppointmentsController {
   }
 
   @Get('my')
+  @UseGuards(JwtGuard)
   async getMyAppointments(@Request() req: any) {
     // Get appointments for logged-in user
-    return this.appointmentsService.getAppointmentsByClient(req.user?.sub);
+    const userId = req.user?.sub || req.user?.id;
+    
+    if (!userId) {
+      // If no authenticated user, try to get from query parameter (for testing)
+      return [];
+    }
+
+    // Get client record by userId
+    const client = await this.prisma.client.findUnique({
+      where: { userId },
+    });
+
+    if (!client) {
+      return [];
+    }
+
+    return this.appointmentsService.getAppointmentsByClient(client.id);
   }
 
   @Get(':id')

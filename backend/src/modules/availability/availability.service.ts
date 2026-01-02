@@ -43,17 +43,10 @@ export class AvailabilityService {
     const startTimeDate = typeof startTime === 'string' ? new Date(startTime) : startTime;
     const endTimeDate = typeof endTime === 'string' ? new Date(endTime) : endTime;
 
-    const dayOfWeek = startTimeDate.getDay();
-    const startTimeStr = startTimeDate.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const endTimeStr = endTimeDate.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
+    // Use UTC time for consistency
+    const dayOfWeek = startTimeDate.getUTCDay();
+    const startTimeStr = `${String(startTimeDate.getUTCHours()).padStart(2, '0')}:${String(startTimeDate.getUTCMinutes()).padStart(2, '0')}`;
+    const endTimeStr = `${String(endTimeDate.getUTCHours()).padStart(2, '0')}:${String(endTimeDate.getUTCMinutes()).padStart(2, '0')}`;
 
     // Check for exception rules first
     const exceptionRule = await this.prisma.availabilityRule.findFirst({
@@ -61,8 +54,8 @@ export class AvailabilityService {
         employeeId,
         isException: true,
         exceptionDate: {
-          gte: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate()),
-          lt: new Date(startTimeDate.getFullYear(), startTimeDate.getMonth(), startTimeDate.getDate() + 1),
+          gte: new Date(Date.UTC(startTimeDate.getUTCFullYear(), startTimeDate.getUTCMonth(), startTimeDate.getUTCDate())),
+          lt: new Date(Date.UTC(startTimeDate.getUTCFullYear(), startTimeDate.getUTCMonth(), startTimeDate.getUTCDate() + 1)),
         },
       },
     });
@@ -96,7 +89,7 @@ export class AvailabilityService {
     date: Date,
     slotDurationMinutes: number = 15,
   ) {
-    const dayOfWeek = date.getDay();
+    const dayOfWeek = date.getUTCDay();
     const slots: { start: string; end: string; isNextAvailable?: boolean }[] = [];
 
     // Get availability rules for this day
@@ -108,8 +101,8 @@ export class AvailabilityService {
           {
             isException: true,
             exceptionDate: {
-              gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
-              lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+              gte: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())),
+              lt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)),
             },
           },
         ],
@@ -129,17 +122,14 @@ export class AvailabilityService {
       where: {
         employeeId,
         startTime: {
-          gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
-          lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+          gte: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())),
+          lt: new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1)),
         },
       },
     });
 
-    let currentTime = new Date(date);
-    currentTime.setHours(startHour, startMin, 0, 0);
-
-    const endTime = new Date(date);
-    endTime.setHours(endHour, endMin, 0, 0);
+    let currentTime = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), startHour, startMin, 0, 0));
+    const endTime = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), endHour, endMin, 0, 0));
 
     let isFirstAvailable = true;
     const now = new Date();
@@ -174,5 +164,59 @@ export class AvailabilityService {
     }
 
     return slots;
+  }
+
+  /**
+   * Get working hours for an employee on a specific date
+   * Returns the startTime and endTime based on availability rules
+   * Returns null if employee has a full day off (00:00 - 00:00)
+   */
+  async getWorkingHours(employeeId: string, date: Date | string) {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    const dayOfWeek = dateObj.getUTCDay();
+
+    // Check for exception rules first
+    const exceptionRule = await this.prisma.availabilityRule.findFirst({
+      where: {
+        employeeId,
+        isException: true,
+        exceptionDate: {
+          gte: new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate())),
+          lt: new Date(Date.UTC(dateObj.getUTCFullYear(), dateObj.getUTCMonth(), dateObj.getUTCDate() + 1)),
+        },
+      },
+    });
+
+    if (exceptionRule) {
+      // Check if it's a full-day-off (00:00 - 00:00)
+      if (exceptionRule.startTime === '00:00' && exceptionRule.endTime === '00:00') {
+        return null; // Full day off - no availability
+      }
+      
+      return {
+        startTime: exceptionRule.startTime,
+        endTime: exceptionRule.endTime,
+        isException: true,
+      };
+    }
+
+    // Check weekly availability rules
+    const weeklyRule = await this.prisma.availabilityRule.findFirst({
+      where: {
+        employeeId,
+        dayOfWeek,
+        isException: false,
+      },
+    });
+
+    if (!weeklyRule) {
+      return null; // No availability for this day
+    }
+
+    return {
+      startTime: weeklyRule.startTime,
+      endTime: weeklyRule.endTime,
+      isException: false,
+    };
   }
 }

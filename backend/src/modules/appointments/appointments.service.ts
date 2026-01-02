@@ -20,6 +20,36 @@ export class AppointmentsService {
     bookingSource?: string;
   }) {
     let finalEmployeeId: string;
+    let clientRecordId: string;
+
+    // Get or create client record from userId
+    // For admin bookings, clientId is 'temp-admin-booking' so we create a temporary client
+    if (data.clientId === 'temp-admin-booking') {
+      // Create a temporary client without userId (for admin-booked appointments)
+      const clientRecord = await this.prisma.client.create({
+        data: {
+          userId: null, // Allow null for admin-created clients
+        },
+      });
+      clientRecordId = clientRecord.id;
+    } else {
+      // For regular clients, expect a valid userId
+      const existingClient = await this.prisma.client.findUnique({
+        where: { userId: data.clientId },
+      });
+
+      if (!existingClient) {
+        // Create a client record for this user
+        const clientRecord = await this.prisma.client.create({
+          data: {
+            userId: data.clientId,
+          },
+        });
+        clientRecordId = clientRecord.id;
+      } else {
+        clientRecordId = existingClient.id;
+      }
+    }
 
     // If no preference, find an available employee for this time slot
     if (!data.employeeId) {
@@ -102,7 +132,7 @@ export class AppointmentsService {
 
     const appointment = await this.prisma.appointment.create({
       data: {
-        clientId: data.clientId,
+        clientId: clientRecordId,
         employeeId: finalEmployeeId,
         startTime: data.startTime,
         endTime: data.endTime,
@@ -296,6 +326,32 @@ export class AppointmentsService {
     return this.prisma.appointment.update({
       where: { id: appointmentId },
       data: { status: 'NO_SHOW' },
+    });
+  }
+
+  async getAllAppointments() {
+    return this.prisma.appointment.findMany({
+      include: {
+        services: {
+          include: {
+            service: true,
+          },
+        },
+        client: {
+          include: {
+            user: true,
+          },
+        },
+        employee: {
+          include: {
+            user: true,
+          },
+        },
+        payments: true,
+      },
+      orderBy: {
+        startTime: 'asc',
+      },
     });
   }
 }

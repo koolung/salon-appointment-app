@@ -92,6 +92,17 @@ export default function AppointmentsPage() {
   
   // Detail modal state
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [timeRangeStart, setTimeRangeStart] = useState<number>(9); // 9 AM default
+  const [timeRangeEnd, setTimeRangeEnd] = useState<number>(17); // 5 PM default
+
+  // Quick add appointment state
+  const [quickAddSlot, setQuickAddSlot] = useState<{ date: Date; hour: number; minute: number } | null>(null);
+  const [quickAddClientName, setQuickAddClientName] = useState('');
+  const [quickAddPhone, setQuickAddPhone] = useState('');
+  const [quickAddServiceIds, setQuickAddServiceIds] = useState<string[]>([]);
+  const [quickAddDuration, setQuickAddDuration] = useState(60);
+  const [isCreatingAppointment, setIsCreatingAppointment] = useState(false);
+  const [currentTimePosition, setCurrentTimePosition] = useState<number | null>(null);
 
   const APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
   const BOOKING_SOURCES = ['ADMIN', 'WEB', 'PHONE', 'AI'];
@@ -193,6 +204,54 @@ export default function AppointmentsPage() {
     return new Date(d.setDate(diff));
   };
 
+  const handleQuickAddAppointment = async () => {
+    if (!quickAddSlot || !selectedEmployeeId || quickAddServiceIds.length === 0) {
+      alert('Please select employee and at least one service');
+      return;
+    }
+
+    setIsCreatingAppointment(true);
+    try {
+      const startTime = new Date(
+        quickAddSlot.date.getFullYear(),
+        quickAddSlot.date.getMonth(),
+        quickAddSlot.date.getDate(),
+        quickAddSlot.hour,
+        quickAddSlot.minute
+      );
+
+      const endTime = new Date(startTime.getTime() + quickAddDuration * 60 * 1000);
+
+      const response = await api.post('/appointments', {
+        clientId: 'temp-admin-booking', // Will be handled by backend
+        employeeId: selectedEmployeeId,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        serviceIds: quickAddServiceIds,
+        bookingSource: 'ADMIN',
+        notes: `Admin booked for ${quickAddClientName}${quickAddPhone ? ' - ' + quickAddPhone : ''}`,
+      });
+
+      // Refresh appointments
+      const aptsRes = await api.get('/appointments');
+      setAppointments(aptsRes.data || []);
+
+      // Clear the quick add form
+      setQuickAddSlot(null);
+      setQuickAddClientName('');
+      setQuickAddPhone('');
+      setQuickAddServiceIds([]);
+      setQuickAddDuration(60);
+
+      alert('Appointment created successfully!');
+    } catch (error: any) {
+      alert(error.response?.data?.message || 'Failed to create appointment');
+      console.error('Failed to create appointment:', error);
+    } finally {
+      setIsCreatingAppointment(false);
+    }
+  };
+
   const getWeekAppointments = () => {
     if (!selectedDate) return [];
     const weekStart = getWeekStart(selectedDate);
@@ -209,6 +268,107 @@ export default function AppointmentsPage() {
     if (!selectedDate) return [];
     return getAppointmentsForDate(selectedDate);
   };
+
+  const calculateDayTimeRange = async () => {
+    if (!selectedDate) {
+      setTimeRangeStart(9);
+      setTimeRangeEnd(17);
+      return;
+    }
+
+    try {
+      // If no employees loaded yet, use default
+      if (!employees || employees.length === 0) {
+        console.log('No employees loaded yet, using default 9-17');
+        setTimeRangeStart(9);
+        setTimeRangeEnd(17);
+        return;
+      }
+
+      // Fetch availability for all employees for the selected date
+      let earliestStart = 24;
+      let latestEnd = 0;
+      const dateStr = selectedDate.toISOString().split('T')[0];
+
+      console.log('Fetching availability for', employees.length, 'employees on', dateStr);
+
+      for (const employee of employees) {
+        try {
+          const response = await api.get(`/availability/working-hours/${employee.id}`, {
+            params: {
+              date: dateStr,
+            },
+          });
+
+          const workingHours = response.data;
+          console.log('Employee', employee.id, 'availability:', workingHours);
+          
+          if (workingHours && workingHours.startTime && workingHours.endTime) {
+            const [startHour] = workingHours.startTime.split(':').map(Number);
+            const [endHour] = workingHours.endTime.split(':').map(Number);
+            
+            console.log('Parsed hours:', startHour, 'to', endHour);
+            
+            earliestStart = Math.min(earliestStart, startHour);
+            latestEnd = Math.max(latestEnd, endHour);
+          }
+        } catch (empError) {
+          console.error('Error fetching availability for employee', employee.id, empError);
+          // Continue with next employee
+        }
+      }
+
+      console.log('Final range:', earliestStart, 'to', latestEnd);
+
+      if (earliestStart !== 24 && latestEnd !== 0) {
+        const newStart = Math.max(0, earliestStart - 1);
+        const newEnd = Math.min(24, latestEnd + 1);
+        console.log('Setting time range to', newStart, 'to', newEnd);
+        setTimeRangeStart(newStart);
+        setTimeRangeEnd(newEnd);
+      } else {
+        // No availability data, use default
+        console.log('No availability data found, using default 9-17');
+        setTimeRangeStart(9);
+        setTimeRangeEnd(17);
+      }
+    } catch (error) {
+      console.error('Failed to fetch employee availability:', error);
+      // Default to standard business hours on error
+      setTimeRangeStart(9);
+      setTimeRangeEnd(17);
+    }
+  };
+
+  // Calculate time range whenever selected date changes (based on all employees' availability)
+  useEffect(() => {
+    calculateDayTimeRange();
+  }, [selectedDate, employees]);
+
+  // Update current time line position
+  useEffect(() => {
+    const updateCurrentTimePosition = () => {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      const rangeStartMinutes = timeRangeStart * 60;
+      
+      // Only show the line if current time is within the visible range
+      if (currentMinutes >= rangeStartMinutes && currentMinutes < timeRangeEnd * 60) {
+        const offsetFromRangeStart = currentMinutes - rangeStartMinutes;
+        const topOffset = (offsetFromRangeStart / 15) * 24; // 24px per 15min slot
+        setCurrentTimePosition(topOffset);
+      } else {
+        setCurrentTimePosition(null);
+      }
+    };
+
+    updateCurrentTimePosition();
+    
+    // Update every minute
+    const interval = setInterval(updateCurrentTimePosition, 60000);
+    
+    return () => clearInterval(interval);
+  }, [timeRangeStart, timeRangeEnd]);
 
   const previousMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
@@ -435,6 +595,124 @@ export default function AppointmentsPage() {
         </div>
       )}
 
+      {/* Quick Add Appointment Modal */}
+      {quickAddSlot && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white p-6 flex items-start justify-between">
+              <div>
+                <h2 className="text-2xl font-bold">Add Appointment</h2>
+                <p className="text-green-100 mt-1">
+                  {quickAddSlot.date.toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                  })} at {String(quickAddSlot.hour).padStart(2, '0')}:{String(quickAddSlot.minute).padStart(2, '0')}
+                </p>
+              </div>
+              <button
+                onClick={() => setQuickAddSlot(null)}
+                className="text-white hover:bg-green-800 rounded-lg p-2 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Client Name */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-1">
+                  Client Name
+                </label>
+                <input
+                  type="text"
+                  value={quickAddClientName}
+                  onChange={(e) => setQuickAddClientName(e.target.value)}
+                  placeholder="Client name"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                />
+              </div>
+
+              {/* Client Phone */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-1">
+                  Phone (Optional)
+                </label>
+                <input
+                  type="tel"
+                  value={quickAddPhone}
+                  onChange={(e) => setQuickAddPhone(e.target.value)}
+                  placeholder="Phone number"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                />
+              </div>
+
+              {/* Services */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-2">
+                  Services (Select at least one)
+                </label>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {services.map((service) => (
+                    <label key={service.id} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={quickAddServiceIds.includes(service.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setQuickAddServiceIds([...quickAddServiceIds, service.id]);
+                          } else {
+                            setQuickAddServiceIds(
+                              quickAddServiceIds.filter((id) => id !== service.id)
+                            );
+                          }
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-sm text-slate-700">{service.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Duration */}
+              <div>
+                <label className="block text-sm font-medium text-slate-900 mb-1">
+                  Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={quickAddDuration}
+                  onChange={(e) => setQuickAddDuration(Number(e.target.value))}
+                  min="15"
+                  step="15"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4">
+                <button
+                  onClick={() => setQuickAddSlot(null)}
+                  className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleQuickAddAppointment}
+                  disabled={isCreatingAppointment || quickAddServiceIds.length === 0}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors"
+                >
+                  {isCreatingAppointment ? 'Creating...' : 'Create Appointment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-6">
         {/* Header with View Toggle */}
         <div className="flex items-start justify-between">
@@ -593,124 +871,202 @@ export default function AppointmentsPage() {
 
         {/* Daily View */}
         {viewMode === 'daily' && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 p-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-slate-900">
-                    {selectedDate
-                      ? selectedDate.toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric',
-                        })
-                      : 'Select a date'}
-                  </h2>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() =>
-                        setSelectedDate(
-                          new Date(
-                            (selectedDate || new Date()).getTime() - 24 * 60 * 60 * 1000
-                          )
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg border border-slate-200 p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-bold text-slate-900">
+                  {selectedDate
+                    ? selectedDate.toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })
+                    : 'Select a date'}
+                </h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() =>
+                      setSelectedDate(
+                        new Date(
+                          (selectedDate || new Date()).getTime() - 24 * 60 * 60 * 1000
                         )
-                      }
-                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
-                    >
-                      ← Prev
-                    </button>
-                    <button
-                      onClick={() => setSelectedDate(new Date())}
-                      className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
-                    >
-                      Today
-                    </button>
-                    <button
-                      onClick={() =>
-                        setSelectedDate(
-                          new Date(
-                            (selectedDate || new Date()).getTime() + 24 * 60 * 60 * 1000
-                          )
-                        )
-                      }
-                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
-                    >
-                      Next →
-                    </button>
-                  </div>
-                </div>
-
-                {loading ? (
-                  <div className="text-center py-8 text-slate-600">Loading...</div>
-                ) : getDayAppointments().length === 0 ? (
-                  <div className="text-center py-8 text-slate-600">No appointments for this day</div>
-                ) : (
-                  <div className="space-y-3">
-                    {getDayAppointments()
-                      .sort(
-                        (a, b) =>
-                          new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
                       )
-                      .map((apt) => {
-                        const startTime = new Date(apt.startTime);
-                        const endTime = new Date(apt.endTime);
-                        const clientName = apt.client?.user
-                          ? `${apt.client.user.firstName} ${apt.client.user.lastName}`
-                          : 'Unknown';
-                        const employeeName = apt.employee?.user
-                          ? `${apt.employee.user.firstName} ${apt.employee.user.lastName}`
-                          : 'Unassigned';
+                    }
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
+                  >
+                    ← Prev
+                  </button>
+                  <button
+                    onClick={() => setSelectedDate(new Date())}
+                    className="px-3 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() =>
+                      setSelectedDate(
+                        new Date(
+                          (selectedDate || new Date()).getTime() + 24 * 60 * 60 * 1000
+                        )
+                      )
+                    }
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-lg transition-colors"
+                  >
+                    Next →
+                  </button>
+                  <input
+                    type="date"
+                    value={
+                      selectedDate
+                        ? selectedDate.toISOString().split('T')[0]
+                        : new Date().toISOString().split('T')[0]
+                    }
+                    onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                    className="px-3 py-2 border border-slate-200 rounded-lg"
+                  />
+                </div>
+              </div>
 
+              {loading ? (
+                <div className="text-center py-8 text-slate-600">Loading...</div>
+              ) : (
+                <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+                  {/* Timeline Calendar */}
+                  <div className="flex gap-2 min-w-max">
+                    {/* Time Column */}
+                    <div className="flex flex-col w-20 flex-shrink-0 mt-[-10px]">
+                      <div className="h-16 border-b border-slate-200"></div>
+                      {Array.from({ length: (timeRangeEnd - timeRangeStart) * 4 }).map((_, idx) => {
+                        const hour = timeRangeStart + Math.floor(idx / 4);
+                        const isHour = idx % 4 === 0;
                         return (
                           <div
-                            key={apt.id}
-                            onClick={() => setSelectedAppointment(apt)}
-                            className="border border-slate-200 rounded-lg p-4 bg-slate-50 hover:bg-blue-50 transition-colors cursor-pointer"
+                            key={idx}
+                            className={`h-6   flex items-start justify-end pr-2 text- ${
+                              isHour ? 'font-bold text-slate-900' : 'text-slate-400'
+                            }`}
                           >
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <div className="font-semibold text-slate-900">
-                                  {startTime.getHours()}:{String(startTime.getMinutes()).padStart(2, '0')} -{' '}
-                                  {endTime.getHours()}:{String(endTime.getMinutes()).padStart(2, '0')}
-                                </div>
-                                <div className="text-sm text-slate-600 mt-1">
-                                  <div>
-                                    <strong>Client:</strong> {clientName}
-                                  </div>
-                                  <div>
-                                    <strong>Staff:</strong> {employeeName}
-                                  </div>
-                                </div>
-                              </div>
-                              <span
-                                className={`text-xs font-medium px-3 py-1 rounded ${
-                                  statusColors[apt.status] || 'bg-slate-100 text-slate-800'
-                                }`}
-                              >
-                                {apt.status}
-                              </span>
-                            </div>
+                            {isHour && `${hour}:00`}
+                            {idx % 4 === 2 && `${hour}:30`}
+                            {idx % 4 === 1 && `${hour}:15`}
+                            {idx % 4 === 3 && `${hour}:45`}
                           </div>
                         );
                       })}
-                  </div>
-                )}
-              </div>
-            </div>
+                    </div>
 
-            <div className="bg-white rounded-lg border border-slate-200 p-6 h-fit">
-              <h3 className="font-bold text-slate-900 mb-4">Select Date</h3>
-              <input
-                type="date"
-                value={
-                  selectedDate
-                    ? selectedDate.toISOString().split('T')[0]
-                    : new Date().toISOString().split('T')[0]
-                }
-                onChange={(e) => setSelectedDate(new Date(e.target.value))}
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg"
-              />
+                    {/* Stylist Columns */}
+                    {employees.length === 0 ? (
+                      <div className="text-center py-8 text-slate-600">No stylists available</div>
+                    ) : (
+                      employees.map((emp) => {
+                        const empName = emp.user
+                          ? `${emp.user.firstName} ${emp.user.lastName}`
+                          : 'Unassigned';
+                        
+                        // Get appointments for this employee on this day
+                        const empAppointments = getDayAppointments().filter(
+                          (apt) => apt.employee?.id === emp.id
+                        );
+
+                        return (
+                          <div
+                            key={emp.id}
+                            className="flex flex-col border-l border-slate-200"
+                          >
+                            {/* Stylist Header */}
+                            <div className="h-16 px-4 py-2 border-b border-slate-200 bg-gradient-to-r from-blue-50 to-blue-100 flex flex-col justify-center w-48 flex-shrink-0">
+                              <div className="font-bold text-slate-900 text-sm">
+                                {empName}
+                              </div>
+                              <div className="text-xs text-slate-600">
+                                Working Hours
+                              </div>
+                            </div>
+
+                            {/* Time Slots */}
+                            <div className="relative">
+                              {Array.from({ length: (timeRangeEnd - timeRangeStart) * 4 }).map((_, idx) => {
+                                const hour = timeRangeStart + Math.floor(idx / 4);
+                                const minute = (idx % 4) * 15;
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={() => {
+                                      if (selectedDate) {
+                                        setQuickAddSlot({
+                                          date: selectedDate,
+                                          hour,
+                                          minute,
+                                        });
+                                      }
+                                    }}
+                                    className="h-6 w-48 border-t border-slate-100 border-r border-slate-200 hover:bg-blue-50 cursor-pointer transition-colors"
+                                    title="Click to add appointment"
+                                  ></div>
+                                );
+                              })}
+
+                              {/* Current time indicator */}
+                              {currentTimePosition !== null && (
+                                <div
+                                  className="absolute left-0 right-0 h-0.5 bg-red-500 z-10 pointer-events-none"
+                                  style={{
+                                    top: `${currentTimePosition}px`,
+                                  }}
+                                ></div>
+                              )}
+
+                              {/* Appointments */}
+                              {empAppointments.map((apt) => {
+                                const startTime = new Date(apt.startTime);
+                                const endTime = new Date(apt.endTime);
+                                const startMinutes =
+                                  startTime.getHours() * 60 + startTime.getMinutes();
+                                const durationMinutes =
+                                  (endTime.getTime() - startTime.getTime()) / (60 * 1000);
+                                
+                                // Calculate offset relative to the start of time range
+                                const rangeStartMinutes = timeRangeStart * 60;
+                                const offsetFromRangeStart = startMinutes - rangeStartMinutes;
+                                const topOffset = (offsetFromRangeStart / 15) * 24; // 24px per 15min slot
+                                const height = (durationMinutes / 15) * 24;
+
+                                const clientName = apt.client?.user
+                                  ? `${apt.client.user.firstName} ${apt.client.user.lastName}`
+                                  : 'Unknown';
+
+                                return (
+                                  <div
+                                    key={apt.id}
+                                    onClick={() => setSelectedAppointment(apt)}
+                                    className={`absolute left-0 right-0 mx-1 rounded p-2 text-xs cursor-pointer overflow-hidden hover:shadow-lg transition-shadow ${
+                                      statusColors[apt.status] || 'bg-slate-100 text-slate-800'
+                                    }`}
+                                    style={{
+                                      top: `${topOffset}px`,
+                                      height: `${Math.max(height, 24)}px`,
+                                    }}
+                                    title={clientName}
+                                  >
+                                    <div className="font-semibold truncate">
+                                      {startTime.getHours()}:{String(startTime.getMinutes()).padStart(2, '0')}
+                                    </div>
+                                    <div className="truncate text-xs opacity-80">
+                                      {clientName}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

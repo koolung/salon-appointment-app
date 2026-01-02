@@ -5,6 +5,31 @@ import { AvailabilityService } from './availability.service';
 export class AvailabilityController {
   constructor(private readonly availabilityService: AvailabilityService) {}
 
+  @Get('working-hours/:employeeId')
+  async getWorkingHours(
+    @Param('employeeId') employeeId: string,
+    @Query('date') date?: string,
+  ) {
+    const queryDate = date || new Date().toISOString().split('T')[0];
+    return this.availabilityService.getWorkingHours(employeeId, queryDate);
+  }
+
+  @Get('slots/:employeeId')
+  async getAvailableSlots(
+    @Param('employeeId') employeeId: string,
+    @Query('date') date?: string,
+    @Query('duration') duration?: string,
+    @Query('timezone') timezone?: string,
+  ) {
+    const slotDate = new Date(date || new Date());
+    const slotDuration = parseInt(duration || '15', 10);
+    
+    // TODO: Use timezone parameter for future timezone conversion
+    // For now, store timezone for audit but use server-side dates
+    
+    return this.availabilityService.getAvailableSlots(employeeId, slotDate, slotDuration);
+  }
+
   @Get(':employeeId')
   async getAvailabilityRules(@Param('employeeId') employeeId: string) {
     return this.availabilityService.getAvailabilityRules(employeeId);
@@ -25,22 +50,6 @@ export class AvailabilityController {
     return this.availabilityService.deleteAvailabilityRule(id);
   }
 
-  @Get('slots/:employeeId')
-  async getAvailableSlots(
-    @Param('employeeId') employeeId: string,
-    @Query('date') date?: string,
-    @Query('duration') duration?: string,
-    @Query('timezone') timezone?: string,
-  ) {
-    const slotDate = new Date(date || new Date());
-    const slotDuration = parseInt(duration || '15', 10);
-    
-    // TODO: Use timezone parameter for future timezone conversion
-    // For now, store timezone for audit but use server-side dates
-    
-    return this.availabilityService.getAvailableSlots(employeeId, slotDate, slotDuration);
-  }
-
   @Post('check')
   async checkAvailability(@Body() data: { employeeId: string; startTime: string; endTime: string }) {
     const startTime = new Date(data.startTime);
@@ -48,3 +57,4 @@ export class AvailabilityController {
     return this.availabilityService.checkAvailability(data.employeeId, startTime, endTime);
   }
 }
+

@@ -38,8 +38,8 @@ export const appointmentsAPI = {
   create: (data: any) => api.post('/appointments', data),
   getById: (id: string) => api.get(`/appointments/${id}`),
   getMyAppointments: () => api.get('/appointments/my'),
-  cancel: (id: string) => api.patch(`/appointments/${id}/cancel`),
-  reschedule: (id: string, data: any) => api.patch(`/appointments/${id}/reschedule`, data),
+  cancel: (id: string) => api.delete(`/appointments/${id}`),
+  reschedule: (id: string, data: any) => api.put(`/appointments/${id}`, data),
 };
 
 // Employees APIs

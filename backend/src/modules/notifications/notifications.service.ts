@@ -40,7 +40,7 @@ export class NotificationsService {
       },
     });
 
-    if (!appointment) {
+    if (!appointment || !appointment.client.user) {
       return;
     }
 
@@ -84,7 +84,7 @@ export class NotificationsService {
       },
     });
 
-    if (!appointment) {
+    if (!appointment || !appointment.client.user) {
       return;
     }
 
@@ -121,7 +121,7 @@ export class NotificationsService {
       },
     });
 
-    if (!appointment) {
+    if (!appointment || !appointment.client.user) {
       return;
     }
 
@@ -163,7 +163,7 @@ export class NotificationsService {
       },
     });
 
-    if (!appointment) {
+    if (!appointment || !appointment.client.user) {
       return;
     }
 
