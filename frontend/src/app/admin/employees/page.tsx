@@ -20,18 +20,32 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchEmployees = async () => {
-      try {
-        const res = await api.get('/employees');
-        setEmployees(res.data || []);
-      } catch (error) {
-        console.error('Failed to fetch employees:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchEmployees = async () => {
+    try {
+      const res = await api.get('/employees');
+      setEmployees(res.data || []);
+    } catch (error) {
+      console.error('Failed to fetch employees:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this employee?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/employees/${id}`);
+      setEmployees(employees.filter(e => e.id !== id));
+    } catch (error: any) {
+      console.error('Failed to delete employee:', error);
+      alert(error.response?.data?.message || 'Failed to delete employee');
+    }
+  };
+
+  useEffect(() => {
     fetchEmployees();
   }, []);
 
@@ -100,7 +114,12 @@ export default function EmployeesPage() {
                       >
                         Edit
                       </Link>
-                      <button className="text-red-600 hover:underline">Delete</button>
+                      <button
+                        onClick={() => handleDelete(employee.id)}
+                        className="text-red-600 hover:underline"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

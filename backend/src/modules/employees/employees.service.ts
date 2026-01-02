@@ -5,9 +5,14 @@ import { PrismaService } from '@/common/prisma/prisma.service';
 export class EmployeesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getAllEmployees(isActive = true) {
+  async getAllEmployees(isActive?: boolean) {
+    const where: any = {};
+    if (isActive !== undefined) {
+      where.isActive = isActive;
+    }
+
     return this.prisma.employee.findMany({
-      where: { isActive },
+      where,
       include: {
         user: {
           select: {
@@ -66,6 +71,66 @@ export class EmployeesService {
         performance: true,
       },
     });
+  }
+
+  async createEmployee(data: any) {
+    // Create user first
+    const user = await this.prisma.user.create({
+      data: {
+        email: data.email,
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.phone,
+        password: 'temp_password_123', // Will need to be set by user
+        role: 'EMPLOYEE',
+      },
+    });
+
+    // Then create employee record
+    return this.prisma.employee.create({
+      data: {
+        userId: user.id,
+        position: data.position,
+        hourlyRate: data.hourlyRate,
+        isActive: true,
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+          },
+        },
+      },
+    });
+  }
+
+  async deleteEmployee(employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: {
+        user: true,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Employee not found');
+    }
+
+    // Delete employee record first
+    await this.prisma.employee.delete({
+      where: { id: employeeId },
+    });
+
+    // Then delete user
+    await this.prisma.user.delete({
+      where: { id: employee.userId },
+    });
+
+    return { message: 'Employee deleted successfully' };
   }
 
   async getEmployeePerformance(employeeId: string) {
