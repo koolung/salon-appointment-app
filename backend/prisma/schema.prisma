@@ -311,6 +311,22 @@ model AuditLog {
   @@index([createdAt])
 }
 
+model Settings {
+  id                    String   @id @default("singleton")
+  salonName             String   @default("My Salon")
+  email                 String   @default("")
+  phone                 String   @default("")
+  address               String   @default("")
+  openingTime           String   @default("09:00")
+  closingTime           String   @default("18:00")
+  bookingNotifications  Boolean  @default(true)
+  appointmentReminders  Boolean  @default(true)
+  minCancellationHours  Int      @default(24)
+  bookingWarningMessage String   @default("Please note: Appointments cancelled less than 24 hours before the scheduled time may incur a cancellation fee.")
+  
+  updatedAt             DateTime @updatedAt
+}
+
 model CalendarIntegration {
   id        String   @id @default(cuid())
   employeeId String?

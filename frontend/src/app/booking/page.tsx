@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import api from '@/lib/api';
+import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useRouter } from 'next/navigation';
 
@@ -46,6 +46,7 @@ export default function BookingPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [availableSlots, setAvailableSlots] = useState<AvailabilitySlot[]>([]);
   const [employeeAvailabilityCount, setEmployeeAvailabilityCount] = useState<Record<string, number>>({});
+  const [bookingWarningMessage, setBookingWarningMessage] = useState('');
 
   // Selection states
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
@@ -75,9 +76,22 @@ export default function BookingPage() {
       router.push('/login');
       return;
     }
+    loadSettings();
     loadServices();
     loadEmployees();
   }, [user, router]);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.get('/settings');
+      if (response.data?.bookingWarningMessage) {
+        setBookingWarningMessage(response.data.bookingWarningMessage);
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      // Continue without warning message if settings fetch fails
+    }
+  };
 
   const loadServices = async () => {
     try {
@@ -322,6 +336,16 @@ const handleBooking = async () => {
             <h1 className="text-4xl font-bold mb-2">Book an Appointment</h1>
             <p className="text-purple-100">Choose your services and preferred time</p>
           </div>
+
+          {/* Booking Warning Message */}
+          {bookingWarningMessage && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mx-8 mt-6">
+              <div className="flex gap-3">
+                <span className="text-amber-600 text-xl">⚠️</span>
+                <p className="text-amber-900 text-sm">{bookingWarningMessage}</p>
+              </div>
+            </div>
+          )}
 
           {/* Step Indicator */}
           {step < 3 && (

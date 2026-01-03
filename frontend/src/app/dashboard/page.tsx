@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { appointmentsAPI } from '@/lib/api';
+import { appointmentsAPI, api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -13,14 +13,28 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [minCancellationHours, setMinCancellationHours] = useState(24);
 
   useEffect(() => {
     if (!user) {
       router.push('/login');
       return;
     }
+    loadSettings();
     loadAppointments();
   }, [user, router]);
+
+  const loadSettings = async () => {
+    try {
+      const response = await api.get('/settings');
+      if (response.data?.minCancellationHours) {
+        setMinCancellationHours(response.data.minCancellationHours);
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+      // Use default minimum cancellation hours if settings fetch fails
+    }
+  };
 
   const loadAppointments = async () => {
     setIsLoading(true);
@@ -167,6 +181,7 @@ export default function DashboardPage() {
                           isExpanded={expandedId === apt.id}
                           onToggle={() => setExpandedId(expandedId === apt.id ? null : apt.id)}
                           onCancel={() => handleCancel(apt.id)}
+                          minCancellationHours={minCancellationHours}
                         />
                       ))}
                     </div>
@@ -184,6 +199,7 @@ export default function DashboardPage() {
                           isExpanded={expandedId === apt.id}
                           onToggle={() => setExpandedId(expandedId === apt.id ? null : apt.id)}
                           onCancel={() => handleCancel(apt.id)}
+                          minCancellationHours={minCancellationHours}
                         />
                       ))}
                     </div>
@@ -215,9 +231,10 @@ interface AppointmentCardProps {
   isExpanded: boolean;
   onToggle: () => void;
   onCancel: () => void;
+  minCancellationHours?: number;
 }
 
-function AppointmentCard({ appointment, isExpanded, onToggle, onCancel }: AppointmentCardProps) {
+function AppointmentCard({ appointment, isExpanded, onToggle, onCancel, minCancellationHours = 24 }: AppointmentCardProps) {
   const startDate = new Date(appointment.startTime);
   const endDate = new Date(appointment.endTime);
   const serviceName = appointment.services
@@ -293,18 +310,28 @@ function AppointmentCard({ appointment, isExpanded, onToggle, onCancel }: Appoin
           )}
         </div>
 
-        <div className="flex gap-2 ml-4">
-          {['PENDING', 'CONFIRMED'].includes(appointment.status) && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onCancel();
-              }}
-              className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm font-medium transition"
-            >
-              Cancel
-            </button>
-          )}
+        <div className="flex gap-2 ml-4 flex-col items-end">
+          {['PENDING', 'CONFIRMED'].includes(appointment.status) && (() => {
+            const now = new Date();
+            const appointmentTime = new Date(appointment.startTime);
+            const msUntilAppointment = appointmentTime.getTime() - now.getTime();
+            const hoursUntilAppointment = msUntilAppointment / (1000 * 60 * 60);
+            const canCancel = hoursUntilAppointment > minCancellationHours;
+
+            return canCancel ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancel();
+                }}
+                className="bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded text-sm font-medium transition"
+              >
+                Cancel
+              </button>
+            ) : (
+              <span className="text-xs text-gray-500">Cannot cancel within {minCancellationHours} hours</span>
+            );
+          })()}
         </div>
       </div>
 

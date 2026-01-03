@@ -9,7 +9,9 @@ import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { AvailabilityModule } from './modules/availability/availability.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { ReportsModule } from './modules/reports/reports.module';
-import { NotificationsModule } from './modules/notifications/notifications.module';import { AppController } from './app.controller';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { AppController } from './app.controller';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -26,6 +28,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     PaymentsModule,
     ReportsModule,
     NotificationsModule,
+    SettingsModule,
   ],
   controllers: [AppController],
 })
