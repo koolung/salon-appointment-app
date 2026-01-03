@@ -33,21 +33,45 @@ export class AppointmentsService {
       let userId: string | null = null;
       
       if (data.clientFirstName || data.clientEmail) {
-        // Generate a unique email if not provided
-        const email = data.clientEmail || 
-          `admin-booked-${Date.now()}@noemail.local`;
-        
-        const user = await this.prisma.user.create({
-          data: {
-            email,
-            password: '', // Admin-created accounts have no password initially
-            firstName: data.clientFirstName || 'Guest',
-            lastName: data.clientLastName || 'Client',
-            phone: data.clientPhone,
-            role: 'CLIENT',
-          },
-        });
-        userId = user.id;
+        // If email is provided, check if user already exists
+        if (data.clientEmail) {
+          const existingUser = await this.prisma.user.findUnique({
+            where: { email: data.clientEmail },
+          });
+          
+          if (existingUser) {
+            userId = existingUser.id;
+          } else {
+            // Create new user with provided email
+            const user = await this.prisma.user.create({
+              data: {
+                email: data.clientEmail,
+                password: '', // Admin-created accounts have no password initially
+                firstName: data.clientFirstName || 'Guest',
+                lastName: data.clientLastName || 'Client',
+                phone: data.clientPhone,
+                role: 'CLIENT',
+              },
+            });
+            userId = user.id;
+          }
+        } else {
+          // Generate a unique email using timestamp + random string if not provided
+          const randomStr = Math.random().toString(36).substring(2, 15);
+          const uniqueEmail = `admin-booked-${Date.now()}-${randomStr}@noemail.local`;
+          
+          const user = await this.prisma.user.create({
+            data: {
+              email: uniqueEmail,
+              password: '', // Admin-created accounts have no password initially
+              firstName: data.clientFirstName || 'Guest',
+              lastName: data.clientLastName || 'Client',
+              phone: data.clientPhone,
+              role: 'CLIENT',
+            },
+          });
+          userId = user.id;
+        }
       }
 
       // Create a client record
@@ -58,21 +82,31 @@ export class AppointmentsService {
       });
       clientRecordId = clientRecord.id;
     } else {
-      // For regular clients, expect a valid userId
-      const existingClient = await this.prisma.client.findUnique({
-        where: { userId: data.clientId },
-      });
+      // For regular clients, expect a valid clientId or userId
+      let clientRecord = null;
+      
+      // First, try to find the client directly by ID (if an existing client was selected)
+      try {
+        clientRecord = await this.prisma.client.findUnique({
+          where: { id: data.clientId },
+        });
+      } catch (e) {
+        // If that fails, try to find by userId
+        clientRecord = await this.prisma.client.findUnique({
+          where: { userId: data.clientId },
+        });
+      }
 
-      if (!existingClient) {
+      if (!clientRecord) {
         // Create a client record for this user
-        const clientRecord = await this.prisma.client.create({
+        const newClientRecord = await this.prisma.client.create({
           data: {
             userId: data.clientId,
           },
         });
-        clientRecordId = clientRecord.id;
+        clientRecordId = newClientRecord.id;
       } else {
-        clientRecordId = existingClient.id;
+        clientRecordId = clientRecord.id;
       }
     }
 

@@ -140,6 +140,9 @@ export default function AppointmentsPage() {
   const [isCreatingAppointment, setIsCreatingAppointment] = useState(false);
   const [currentTimePosition, setCurrentTimePosition] = useState<number | null>(null);
   const [employeeWorkingHours, setEmployeeWorkingHours] = useState<Record<string, { startTime: string; endTime: string } | null>>({});
+  const [clientSearchResults, setClientSearchResults] = useState<any[]>([]);
+  const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+  const [selectedExistingClient, setSelectedExistingClient] = useState<any>(null);
 
   const APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
   const BOOKING_SOURCES = ['ADMIN', 'WEB', 'PHONE', 'AI'];
@@ -386,6 +389,58 @@ export default function AppointmentsPage() {
     }
   };
 
+  const searchClients = async (searchTerm: string) => {
+    if (!searchTerm.trim()) {
+      setClientSearchResults([]);
+      setShowClientSuggestions(false);
+      return;
+    }
+
+    try {
+      // Search through appointments to find clients matching the search term
+      const searchLower = searchTerm.toLowerCase();
+      const matches = new Map<string, any>();
+
+      appointments.forEach((apt) => {
+        if (apt.client?.user) {
+          const fullName = `${apt.client.user.firstName || ''} ${apt.client.user.lastName || ''}`.toLowerCase();
+          const phone = (apt.client.user.phone || '').toLowerCase();
+          const email = (apt.client.user.email || '').toLowerCase();
+
+          if (
+            fullName.includes(searchLower) ||
+            phone.includes(searchLower) ||
+            email.includes(searchLower)
+          ) {
+            if (!matches.has(apt.client.user.email || apt.client.id)) {
+              matches.set(apt.client.user.email || apt.client.id, {
+                id: apt.client.id,
+                firstName: apt.client.user.firstName,
+                lastName: apt.client.user.lastName,
+                email: apt.client.user.email,
+                phone: apt.client.user.phone,
+              });
+            }
+          }
+        }
+      });
+
+      setClientSearchResults(Array.from(matches.values()));
+      setShowClientSuggestions(matches.size > 0);
+    } catch (error) {
+      console.error('Failed to search clients:', error);
+    }
+  };
+
+  const handleSelectClient = (client: any) => {
+    setQuickAddClientFirstName(client.firstName || '');
+    setQuickAddClientLastName(client.lastName || '');
+    setQuickAddClientEmail(client.email || '');
+    setQuickAddClientPhone(client.phone || '');
+    setSelectedExistingClient(client);
+    setShowClientSuggestions(false);
+  };
+
   const handleQuickAddAppointment = async () => {
     if (!quickAddSlot || quickAddServiceIds.length === 0) {
       alert('Please select at least one service');
@@ -409,8 +464,11 @@ export default function AppointmentsPage() {
 
       const endTime = new Date(startTime.getTime() + quickAddDuration * 60 * 1000);
 
+      // If an existing client was selected, use their ID; otherwise use temp marker
+      const clientIdToSend = selectedExistingClient?.id || 'temp-admin-booking';
+
       const response = await api.post('/appointments', {
-        clientId: 'temp-admin-booking',
+        clientId: clientIdToSend,
         employeeId: quickAddSlot.employeeId,
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
@@ -435,6 +493,8 @@ export default function AppointmentsPage() {
       setQuickAddClientPhone('');
       setQuickAddServiceIds([]);
       setQuickAddDuration(60);
+      setSelectedExistingClient(null);
+      setShowClientSuggestions(false);
 
       alert('Appointment created successfully!');
     } catch (error: any) {
@@ -459,7 +519,14 @@ export default function AppointmentsPage() {
 
   const getDayAppointments = () => {
     if (!selectedDate) return [];
-    return getAppointmentsForDate(selectedDate);
+    let dayAppointments = getAppointmentsForDate(selectedDate);
+    
+    // In daily view, hide cancelled appointments by default unless specifically selected
+    if (selectedStatus !== 'CANCELLED') {
+      dayAppointments = dayAppointments.filter(apt => apt.status !== 'CANCELLED');
+    }
+    
+    return dayAppointments;
   };
 
   const isTimeSlotAvailable = (employeeId: string, hour: number, minute: number): boolean => {
@@ -1478,18 +1545,43 @@ export default function AppointmentsPage() {
             </div>
 
             <div className="p-6 space-y-4">
-              {/* Client First Name */}
+              {/* Client First Name - with search */}
               <div>
                 <label className="block text-sm font-medium text-slate-900 mb-1">
-                  First Name *
+                  First Name * (Type to search existing clients)
                 </label>
                 <input
                   type="text"
                   value={quickAddClientFirstName}
-                  onChange={(e) => setQuickAddClientFirstName(e.target.value)}
-                  placeholder="Client first name"
+                  onChange={(e) => {
+                    setQuickAddClientFirstName(e.target.value);
+                    searchClients(e.target.value);
+                  }}
+                  placeholder="Client first name or search"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
+                
+                {/* Client Suggestions Dropdown */}
+                {showClientSuggestions && clientSearchResults.length > 0 && (
+                  <div className="absolute bg-white border border-slate-300 rounded-lg mt-1 w-80 max-h-40 overflow-y-auto shadow-lg z-50">
+                    {clientSearchResults.map((client, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleSelectClient(client)}
+                        className="w-full text-left px-3 py-2 hover:bg-blue-100 border-b border-slate-200 last:border-b-0"
+                      >
+                        <div className="font-medium text-slate-900">
+                          {client.firstName} {client.lastName}
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          {client.email && `${client.email}`}
+                          {client.email && client.phone && ' • '}
+                          {client.phone && `${client.phone}`}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Client Last Name */}
@@ -1500,8 +1592,11 @@ export default function AppointmentsPage() {
                 <input
                   type="text"
                   value={quickAddClientLastName}
-                  onChange={(e) => setQuickAddClientLastName(e.target.value)}
-                  placeholder="Client last name"
+                  onChange={(e) => {
+                    setQuickAddClientLastName(e.target.value);
+                    searchClients(e.target.value);
+                  }}
+                  placeholder="Client last name or search"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
               </div>
@@ -1509,12 +1604,17 @@ export default function AppointmentsPage() {
               {/* Client Email */}
               <div>
                 <label className="block text-sm font-medium text-slate-900 mb-1">
-                  Email (Optional)
+                  Email (Optional - Type to search)
                 </label>
                 <input
                   type="email"
                   value={quickAddClientEmail}
-                  onChange={(e) => setQuickAddClientEmail(e.target.value)}
+                  onChange={(e) => {
+                    setQuickAddClientEmail(e.target.value);
+                    if (e.target.value.trim()) {
+                      searchClients(e.target.value);
+                    }
+                  }}
                   placeholder="client@example.com"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
@@ -1523,12 +1623,17 @@ export default function AppointmentsPage() {
               {/* Client Phone */}
               <div>
                 <label className="block text-sm font-medium text-slate-900 mb-1">
-                  Phone (Optional)
+                  Phone (Optional - Type to search)
                 </label>
                 <input
                   type="tel"
                   value={quickAddClientPhone}
-                  onChange={(e) => setQuickAddClientPhone(e.target.value)}
+                  onChange={(e) => {
+                    setQuickAddClientPhone(e.target.value);
+                    if (e.target.value.trim()) {
+                      searchClients(e.target.value);
+                    }
+                  }}
                   placeholder="Phone number"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
                 />
@@ -1728,7 +1833,7 @@ export default function AppointmentsPage() {
                 onChange={(e) => setSelectedStatus(e.target.value || null)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="">All Statuses</option>
+                <option value="">{viewMode === 'daily' ? 'All Active Statuses' : 'All Statuses'}</option>
                 {APPOINTMENT_STATUSES.map((status) => (
                   <option key={status} value={status}>
                     {status.replace(/_/g, ' ')}
