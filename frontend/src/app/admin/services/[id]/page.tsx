@@ -15,6 +15,11 @@ interface Service {
   categoryId?: string;
 }
 
+interface Category {
+  id: string;
+  name: string;
+}
+
 export default function EditServicePage() {
   const params = useParams();
   const router = useRouter();
@@ -22,6 +27,8 @@ export default function EditServicePage() {
   
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [formData, setFormData] = useState<Service>({
     id: '',
     name: '',
@@ -32,18 +39,23 @@ export default function EditServicePage() {
   });
 
   useEffect(() => {
-    const fetchService = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get(`/services/${serviceId}`);
-        setFormData(res.data);
+        const [serviceRes, categoriesRes] = await Promise.all([
+          api.get(`/services/${serviceId}`),
+          api.get('/services/categories'),
+        ]);
+        setFormData(serviceRes.data);
+        setCategories(categoriesRes.data || []);
       } catch (error) {
-        console.error('Failed to fetch service:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setLoading(false);
+        setLoadingCategories(false);
       }
     };
 
-    fetchService();
+    fetchData();
   }, [serviceId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -65,6 +77,7 @@ export default function EditServicePage() {
         price: parseFloat(formData.price.toString()),
         baseDuration: parseInt(formData.baseDuration.toString()),
         isActive: formData.isActive,
+        categoryId: formData.categoryId || null,
       });
       router.push('/admin/services');
     } catch (error) {
@@ -171,6 +184,29 @@ export default function EditServicePage() {
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-900 mb-2">
+                Category
+              </label>
+              {loadingCategories ? (
+                <div className="text-slate-600 text-sm">Loading categories...</div>
+              ) : (
+                <select
+                  name="categoryId"
+                  value={formData.categoryId || ''}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Select a category (optional)</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div>

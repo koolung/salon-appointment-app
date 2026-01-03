@@ -3,11 +3,18 @@
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/lib/api';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+interface Category {
+  id: string;
+  name: string;
+}
 
 export default function NewServicePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -15,6 +22,21 @@ export default function NewServicePage() {
     baseDuration: '30',
     categoryId: '',
   });
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const res = await api.get('/services/categories');
+        setCategories(res.data || []);
+      } catch (error) {
+        console.error('Failed to fetch categories:', error);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+
+    fetchCategories();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -31,7 +53,7 @@ export default function NewServicePage() {
         description: formData.description,
         price: parseFloat(formData.price),
         baseDuration: parseInt(formData.baseDuration),
-        // Don't send categoryId - leave it empty/null
+        categoryId: formData.categoryId || null,
       });
       router.push('/admin/services');
     } catch (error: any) {
@@ -115,18 +137,23 @@ export default function NewServicePage() {
               <label className="block text-sm font-medium text-slate-900 mb-2">
                 Category
               </label>
-              <select
-                name="categoryId"
-                value={formData.categoryId}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Select a category</option>
-                <option value="cat1">Hair Services</option>
-                <option value="cat2">Nail Services</option>
-                <option value="cat3">Skincare</option>
-                <option value="cat4">Makeup</option>
-              </select>
+              {loadingCategories ? (
+                <div className="text-slate-600 text-sm">Loading categories...</div>
+              ) : (
+                <select
+                  name="categoryId"
+                  value={formData.categoryId}
+                  onChange={handleChange}
+                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Select a category (optional)</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             <div className="flex gap-4 pt-6">
