@@ -485,7 +485,7 @@ const handleBooking = async () => {
     const endTime = new Date(startTime.getTime() + getTotalDuration() * 60000);
 
     const response = await api.post('/appointments', {
-      clientId: user?.id,
+      userId: user?.id,
       employeeId: selectedEmployee,
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),

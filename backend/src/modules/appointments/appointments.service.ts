@@ -1,16 +1,19 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/common/prisma/prisma.service';
 import { AvailabilityService } from '@/modules/availability/availability.service';
+import { NotificationsService } from '@/modules/notifications/notifications.service';
 
 @Injectable()
 export class AppointmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly availabilityService: AvailabilityService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createAppointment(data: {
-    clientId: string;
+    clientId?: string;
+    userId?: string;
     employeeId: string | null;
     startTime: Date;
     endTime: Date;
@@ -26,9 +29,27 @@ export class AppointmentsService {
     let finalEmployeeId: string;
     let clientRecordId: string;
 
-    // Get or create client record from userId
+    // Handle logged-in user booking with userId
+    if (data.userId) {
+      // Try to find existing client for this user
+      let clientRecord = await this.prisma.client.findUnique({
+        where: { userId: data.userId },
+      });
+
+      // If no client exists, create one
+      if (!clientRecord) {
+        clientRecord = await this.prisma.client.create({
+          data: {
+            userId: data.userId,
+          },
+        });
+      }
+
+      clientRecordId = clientRecord.id;
+    }
+    // Get or create client record from clientId
     // For admin bookings, clientId is 'temp-admin-booking' so we create a temporary client
-    if (data.clientId === 'temp-admin-booking') {
+    else if (data.clientId === 'temp-admin-booking') {
       // Create user first if we have client info
       let userId: string | null = null;
       
@@ -81,7 +102,7 @@ export class AppointmentsService {
         },
       });
       clientRecordId = clientRecord.id;
-    } else {
+    } else if (data.clientId) {
       // For regular clients, expect a valid clientId or userId
       let clientRecord = null;
       
@@ -125,6 +146,8 @@ export class AppointmentsService {
         });
         clientRecordId = newClient.id;
       }
+    } else {
+      throw new BadRequestException('Either userId or clientId must be provided');
     }
 
     // If no preference, find an available employee for this time slot
@@ -252,6 +275,14 @@ export class AppointmentsService {
         },
       },
     });
+
+    // Send booking confirmation email to client
+    try {
+      await this.notificationsService.sendBookingConfirmation(appointment.id);
+    } catch (error) {
+      console.error('Failed to send booking confirmation email:', error);
+      // Don't throw error, email is not critical to appointment creation
+    }
 
     return appointment;
   }
