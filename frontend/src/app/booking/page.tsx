@@ -232,7 +232,11 @@ export default function BookingPage() {
   useEffect(() => {
     // Set default category when services load
     if (services.length > 0 && !selectedCategory) {
-      const categories = [...new Set(services.map(s => s.category?.name).filter(Boolean))];
+      const getServiceCategories = () => {
+        const categories = [...new Set(services.map(s => s.category?.name).filter(Boolean))];
+        return categories.sort() as string[];
+      };
+      const categories = getServiceCategories();
       if (categories.length > 0) {
         setSelectedCategory(categories[0]);
       }

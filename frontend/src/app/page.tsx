@@ -21,12 +21,20 @@ export default function Home() {
           <p className="text-xl text-gray-600 mb-8">
             Schedule appointments with top stylists at your convenience
           </p>
-          <a 
-            href="/booking" 
-            className="inline-block bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 text-lg font-semibold"
-          >
-            Book Now
-          </a>
+          <div className="flex gap-4 justify-center flex-wrap">
+            <a 
+              href="/booking" 
+              className="inline-block bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 text-lg font-semibold"
+            >
+              Book as Member
+            </a>
+            <a 
+              href="/booking/guest" 
+              className="inline-block bg-pink-600 text-white px-8 py-3 rounded-lg hover:bg-pink-700 text-lg font-semibold"
+            >
+              Book as Guest
+            </a>
+          </div>
         </div>
       </section>
 

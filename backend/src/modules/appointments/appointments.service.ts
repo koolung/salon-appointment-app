@@ -47,6 +47,43 @@ export class AppointmentsService {
 
       clientRecordId = clientRecord.id;
     }
+    // Handle guest bookings
+    else if (data.clientId === 'temp-guest-booking') {
+      // Create user for guest
+      let userId: string | null = null;
+      
+      if (data.clientEmail) {
+        // Check if user already exists
+        const existingUser = await this.prisma.user.findUnique({
+          where: { email: data.clientEmail },
+        });
+        
+        if (existingUser) {
+          userId = existingUser.id;
+        } else {
+          // Create new user for guest
+          const user = await this.prisma.user.create({
+            data: {
+              email: data.clientEmail,
+              password: '', // Guest accounts have no password
+              firstName: data.clientFirstName || 'Guest',
+              lastName: data.clientLastName || 'User',
+              phone: data.clientPhone || null,
+              role: 'CLIENT',
+            },
+          });
+          userId = user.id;
+        }
+      }
+
+      // Create client record for guest
+      const clientRecord = await this.prisma.client.create({
+        data: {
+          userId: userId || undefined,
+        },
+      });
+      clientRecordId = clientRecord.id;
+    }
     // Get or create client record from clientId
     // For admin bookings, clientId is 'temp-admin-booking' so we create a temporary client
     else if (data.clientId === 'temp-admin-booking') {
