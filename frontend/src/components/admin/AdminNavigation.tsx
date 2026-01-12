@@ -15,6 +15,7 @@ export default function AdminNavigation() {
   const navItems = [
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/employees', label: 'Employees', icon: '👥' },
+    { href: '/admin/clients', label: 'Clients', icon: '💇' },
     { href: '/admin/services', label: 'Services', icon: '✨' },
     { href: '/admin/categories', label: 'Categories', icon: '📂' },
     { href: '/admin/appointments', label: 'Appointments', icon: '📅' },

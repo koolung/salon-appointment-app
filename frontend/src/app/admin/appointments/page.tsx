@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/lib/api';
 
@@ -143,16 +143,34 @@ export default function AppointmentsPage() {
   const [clientSearchResults, setClientSearchResults] = useState<any[]>([]);
   const [showClientSuggestions, setShowClientSuggestions] = useState(false);
   const [selectedExistingClient, setSelectedExistingClient] = useState<any>(null);
+  const clientDropdownRef = useRef<HTMLDivElement>(null);
 
   const APPOINTMENT_STATUSES = ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
   const BOOKING_SOURCES = ['ADMIN', 'WEB', 'PHONE', 'AI'];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (clientDropdownRef.current && !clientDropdownRef.current.contains(event.target as Node)) {
+        setShowClientSuggestions(false);
+      }
+    };
+
+    if (showClientSuggestions) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('touchstart', handleClickOutside);
+      };
+    }
+  }, [showClientSuggestions]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const [aptsRes, empsRes, secsRes] = await Promise.all([
           api.get('/appointments'),
-          api.get('/employees'),
+          api.get('/employees?isActive=true'),
           api.get('/services'),
         ]);
         setAppointments(aptsRes.data || []);
@@ -204,6 +222,9 @@ export default function AppointmentsPage() {
 
   const applyAllFilters = (apts: Appointment[]) => {
     let filtered = apts;
+
+    // Filter out appointments from inactive employees
+    filtered = filtered.filter((apt) => apt.employee?.isActive !== false);
 
     // Filter by employee (except in list view with no specific employee selected)
     if (selectedEmployeeId && viewMode !== 'list') {
@@ -629,8 +650,14 @@ export default function AppointmentsPage() {
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       const rangeStartMinutes = timeRangeStart * 60;
       
-      // Only show the line if current time is within the visible range
-      if (currentMinutes >= rangeStartMinutes && currentMinutes < timeRangeEnd * 60) {
+      // Check if selectedDate is today
+      const isToday = selectedDate && 
+        selectedDate.getDate() === now.getDate() &&
+        selectedDate.getMonth() === now.getMonth() &&
+        selectedDate.getFullYear() === now.getFullYear();
+      
+      // Only show the line if current time is within the visible range AND we're viewing today
+      if (isToday && currentMinutes >= rangeStartMinutes && currentMinutes < timeRangeEnd * 60) {
         const offsetFromRangeStart = currentMinutes - rangeStartMinutes;
         const topOffset = (offsetFromRangeStart / 15) * 24; // 24px per 15min slot
         setCurrentTimePosition(topOffset);
@@ -645,7 +672,7 @@ export default function AppointmentsPage() {
     const interval = setInterval(updateCurrentTimePosition, 60000);
     
     return () => clearInterval(interval);
-  }, [timeRangeStart, timeRangeEnd]);
+  }, [timeRangeStart, timeRangeEnd, selectedDate]);
 
   // Fetch working hours for each employee
   useEffect(() => {
@@ -1550,38 +1577,40 @@ export default function AppointmentsPage() {
                 <label className="block text-sm font-medium text-slate-900 mb-1">
                   First Name * (Type to search existing clients)
                 </label>
-                <input
-                  type="text"
-                  value={quickAddClientFirstName}
-                  onChange={(e) => {
-                    setQuickAddClientFirstName(e.target.value);
-                    searchClients(e.target.value);
-                  }}
-                  placeholder="Client first name or search"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
-                />
-                
-                {/* Client Suggestions Dropdown */}
-                {showClientSuggestions && clientSearchResults.length > 0 && (
-                  <div className="absolute bg-white border border-slate-300 rounded-lg mt-1 w-80 max-h-40 overflow-y-auto shadow-lg z-50">
-                    {clientSearchResults.map((client, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleSelectClient(client)}
-                        className="w-full text-left px-3 py-2 hover:bg-blue-100 border-b border-slate-200 last:border-b-0"
-                      >
-                        <div className="font-medium text-slate-900">
-                          {client.firstName} {client.lastName}
-                        </div>
-                        <div className="text-xs text-slate-600">
-                          {client.email && `${client.email}`}
-                          {client.email && client.phone && ' • '}
-                          {client.phone && `${client.phone}`}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <div ref={clientDropdownRef} className="relative">
+                  <input
+                    type="text"
+                    value={quickAddClientFirstName}
+                    onChange={(e) => {
+                      setQuickAddClientFirstName(e.target.value);
+                      searchClients(e.target.value);
+                    }}
+                    placeholder="Client first name or search"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-slate-900"
+                  />
+                  
+                  {/* Client Suggestions Dropdown */}
+                  {showClientSuggestions && clientSearchResults.length > 0 && (
+                    <div className="absolute bg-white border border-slate-300 rounded-lg mt-1 w-80 max-h-40 overflow-y-auto shadow-lg z-50">
+                      {clientSearchResults.map((client, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => handleSelectClient(client)}
+                          className="w-full text-left px-3 py-2 hover:bg-blue-100 border-b border-slate-200 last:border-b-0"
+                        >
+                          <div className="font-medium text-slate-900">
+                            {client.firstName} {client.lastName}
+                          </div>
+                          <div className="text-xs text-slate-600">
+                            {client.email && `${client.email}`}
+                            {client.email && client.phone && ' • '}
+                            {client.phone && `${client.phone}`}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Client Last Name */}

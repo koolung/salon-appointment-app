@@ -5,6 +5,26 @@ import { useParams, useRouter } from 'next/navigation';
 import AdminLayout from '@/components/admin/AdminLayout';
 import api from '@/lib/api';
 
+interface Service {
+  id: string;
+  name: string;
+  price: number;
+  baseDuration: number;
+  categoryId: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  services: Service[];
+}
+
+interface EmployeeService {
+  id: string;
+  serviceId: string;
+  service: Service;
+}
+
 interface Employee {
   id: string;
   user: {
@@ -17,6 +37,7 @@ interface Employee {
   position: string;
   hourlyRate: number;
   isActive: boolean;
+  employeeServices?: EmployeeService[];
 }
 
 export default function EditEmployeePage() {
@@ -26,6 +47,7 @@ export default function EditEmployeePage() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingServices, setLoadingServices] = useState(false);
   const [formData, setFormData] = useState<Employee>({
     id: '',
     user: {
@@ -38,21 +60,36 @@ export default function EditEmployeePage() {
     position: '',
     hourlyRate: 0,
     isActive: true,
+    employeeServices: [],
   });
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedServices, setSelectedServices] = useState<string[]>([]);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    const fetchEmployee = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get(`/employees/${employeeId}`);
-        setFormData(res.data);
+        setLoading(true);
+        const [empRes, catRes] = await Promise.all([
+          api.get(`/employees/${employeeId}`),
+          api.get('/services/categories'),
+        ]);
+        
+        setFormData(empRes.data);
+        setCategories(catRes.data);
+        
+        // Set selected services from employee's current services
+        if (empRes.data.employeeServices && Array.isArray(empRes.data.employeeServices)) {
+          setSelectedServices(empRes.data.employeeServices.map((es: EmployeeService) => es.serviceId));
+        }
       } catch (error) {
-        console.error('Failed to fetch employee:', error);
+        console.error('Failed to fetch data:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchEmployee();
+    fetchData();
   }, [employeeId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -85,6 +122,19 @@ export default function EditEmployeePage() {
     }
   };
 
+  const handleServiceToggle = (serviceId: string) => {
+    setSelectedServices((prev) =>
+      prev.includes(serviceId) ? prev.filter((id) => id !== serviceId) : [...prev, serviceId]
+    );
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [categoryId]: !prev[categoryId],
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
@@ -94,6 +144,7 @@ export default function EditEmployeePage() {
         position: formData.position,
         hourlyRate: formData.hourlyRate,
         isActive: formData.isActive,
+        serviceIds: selectedServices,
       });
       router.push('/admin/employees');
     } catch (error: any) {
@@ -130,11 +181,11 @@ export default function EditEmployeePage() {
 
   return (
     <AdminLayout>
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="mb-8 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">Edit Employee</h1>
-            <p className="text-slate-600 mt-1">Update employee information</p>
+            <p className="text-slate-600 mt-1">Update employee information and services</p>
           </div>
           <button
             onClick={handleDelete}
@@ -213,6 +264,81 @@ export default function EditEmployeePage() {
                 />
                 <span className="text-slate-900 font-medium">Active</span>
               </label>
+            </div>
+
+            {/* Services section */}
+            <div>
+              <h3 className="font-semibold text-slate-900 mb-4">Services</h3>
+              <p className="text-sm text-slate-600 mb-4">Select which services this employee can provide</p>
+              
+              {categories.length === 0 ? (
+                <div className="text-slate-600 text-sm">No services available</div>
+              ) : (
+                <div>
+                  {/* Select All / Clear All buttons */}
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allServiceIds = categories.flatMap(cat => cat.services.map(s => s.id));
+                        setSelectedServices(allServiceIds);
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedServices([])}
+                      className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-2">
+                  {categories.map((category) => (
+                    <div key={category.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => toggleCategory(category.id)}
+                        className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
+                      >
+                        <h4 className="font-medium text-slate-900">{category.name}</h4>
+                        <span className={`text-slate-600 transition-transform ${
+                          expandedCategories[category.id] ? 'rotate-180' : ''
+                        }`}>
+                          ▼
+                        </span>
+                      </button>
+                      {expandedCategories[category.id] && (
+                        <div className="bg-slate-50 border-t border-slate-200 p-4 space-y-2">
+                          {category.services.map((service) => (
+                            <label
+                              key={service.id}
+                              className="flex items-start gap-3 p-2 hover:bg-white rounded cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedServices.includes(service.id)}
+                                onChange={() => handleServiceToggle(service.id)}
+                                className="w-4 h-4 rounded border-slate-300 mt-1"
+                              />
+                              <div className="flex-1">
+                                <div className="text-slate-900 font-medium">{service.name}</div>
+                                <div className="text-sm text-slate-600">
+                                  ${service.price.toFixed(2)} • {service.baseDuration} min
+                                </div>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-4 pt-6">

@@ -25,6 +25,11 @@ export class EmployeesService {
           },
         },
         performance: true,
+        employeeServices: {
+          include: {
+            service: true,
+          },
+        },
       },
     });
   }
@@ -45,6 +50,11 @@ export class EmployeesService {
         },
         performance: true,
         availabilityRules: true,
+        employeeServices: {
+          include: {
+            service: true,
+          },
+        },
       },
     });
 
@@ -56,9 +66,11 @@ export class EmployeesService {
   }
 
   async updateEmployee(employeeId: string, data: any) {
-    return this.prisma.employee.update({
+    const { serviceIds, ...updateData } = data;
+
+    const employee = await this.prisma.employee.update({
       where: { id: employeeId },
-      data,
+      data: updateData,
       include: {
         user: {
           select: {
@@ -69,8 +81,58 @@ export class EmployeesService {
           },
         },
         performance: true,
+        employeeServices: {
+          include: {
+            service: true,
+          },
+        },
       },
     });
+
+    // If serviceIds are provided, update employee services
+    if (serviceIds && Array.isArray(serviceIds)) {
+      // Delete existing services
+      await this.prisma.employeeService.deleteMany({
+        where: { employeeId },
+      });
+
+      // Create new services
+      if (serviceIds.length > 0) {
+        await Promise.all(
+          serviceIds.map((serviceId: string) =>
+            this.prisma.employeeService.create({
+              data: {
+                employeeId: employeeId,
+                serviceId: serviceId,
+              },
+            }),
+          ),
+        );
+      }
+
+      // Refetch to get updated services
+      return this.prisma.employee.findUnique({
+        where: { id: employeeId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          performance: true,
+          employeeServices: {
+            include: {
+              service: true,
+            },
+          },
+        },
+      });
+    }
+
+    return employee;
   }
 
   async createEmployee(data: any) {
@@ -87,7 +149,7 @@ export class EmployeesService {
     });
 
     // Then create employee record
-    return this.prisma.employee.create({
+    const employee = await this.prisma.employee.create({
       data: {
         userId: user.id,
         position: data.position,
@@ -104,8 +166,50 @@ export class EmployeesService {
             phone: true,
           },
         },
+        employeeServices: {
+          include: {
+            service: true,
+          },
+        },
       },
     });
+
+    // If serviceIds are provided, create employee services
+    if (data.serviceIds && Array.isArray(data.serviceIds) && data.serviceIds.length > 0) {
+      await Promise.all(
+        data.serviceIds.map((serviceId: string) =>
+          this.prisma.employeeService.create({
+            data: {
+              employeeId: employee.id,
+              serviceId: serviceId,
+            },
+          }),
+        ),
+      );
+
+      // Refetch to get updated services
+      return this.prisma.employee.findUnique({
+        where: { id: employee.id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              phone: true,
+            },
+          },
+          employeeServices: {
+            include: {
+              service: true,
+            },
+          },
+        },
+      });
+    }
+
+    return employee;
   }
 
   async deleteEmployee(employeeId: string) {

@@ -92,21 +92,38 @@ export class AppointmentsService {
         });
       } catch (e) {
         // If that fails, try to find by userId
-        clientRecord = await this.prisma.client.findUnique({
-          where: { userId: data.clientId },
-        });
+        try {
+          clientRecord = await this.prisma.client.findUnique({
+            where: { userId: data.clientId },
+          });
+        } catch (e2) {
+          // Client not found, will need to create one
+        }
       }
 
-      if (!clientRecord) {
-        // Create a client record for this user
-        const newClientRecord = await this.prisma.client.create({
+      // If client exists, use it
+      if (clientRecord) {
+        clientRecordId = clientRecord.id;
+      } else {
+        // Create a new user and client for this appointment
+        const newUser = await this.prisma.user.create({
           data: {
-            userId: data.clientId,
+            firstName: data.clientFirstName || 'Guest',
+            lastName: data.clientLastName || 'User',
+            email: data.clientEmail || `guest-${Date.now()}@salon.local`,
+            phone: data.clientPhone || null,
+            role: 'CLIENT',
+            password: 'temp-password', // Temporary password for admin-created clients
           },
         });
-        clientRecordId = newClientRecord.id;
-      } else {
-        clientRecordId = clientRecord.id;
+
+        // Now create the client record with the valid userId
+        const newClient = await this.prisma.client.create({
+          data: {
+            userId: newUser.id,
+          },
+        });
+        clientRecordId = newClient.id;
       }
     }
 

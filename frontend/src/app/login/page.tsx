@@ -30,7 +30,7 @@ export default function LoginPage() {
       
       // Route based on role
       if (user?.role === 'ADMIN') {
-        router.push('/admin');
+        router.push('/admin/appointments');
       } else {
         router.push('/dashboard');
       }

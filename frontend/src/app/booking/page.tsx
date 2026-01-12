@@ -37,6 +37,152 @@ interface AvailabilitySlot {
   end: string;
 }
 
+interface InteractiveCalendarProps {
+  selectedDate: string;
+  onDateChange: (date: string) => void;
+}
+
+function InteractiveCalendar({ selectedDate, onDateChange }: InteractiveCalendarProps) {
+  const [currentMonth, setCurrentMonth] = useState<Date>(
+    selectedDate ? new Date(selectedDate) : new Date()
+  );
+
+  const getDaysInMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date: Date) => {
+    return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  };
+
+  const isDateDisabled = (date: Date) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Disable past dates and dates beyond 60 days
+    const sixtyDaysFromNow = new Date(today);
+    sixtyDaysFromNow.setDate(sixtyDaysFromNow.getDate() + 60);
+    
+    const testDate = new Date(date);
+    testDate.setHours(0, 0, 0, 0);
+    
+    return testDate < today || testDate > sixtyDaysFromNow;
+  };
+
+  const formatDateString = (year: number, month: number, day: number): string => {
+    const m = String(month + 1).padStart(2, '0');
+    const d = String(day).padStart(2, '0');
+    return `${year}-${m}-${d}`;
+  };
+
+  const handleDateClick = (day: number) => {
+    const clickedDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+    if (!isDateDisabled(clickedDate)) {
+      const dateString = formatDateString(clickedDate.getFullYear(), clickedDate.getMonth(), clickedDate.getDate());
+      onDateChange(dateString);
+    }
+  };
+
+  const handlePrevMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1));
+  };
+
+  const daysInMonth = getDaysInMonth(currentMonth);
+  const firstDay = getFirstDayOfMonth(currentMonth);
+  const days = [];
+
+  // Empty cells for days before month starts
+  for (let i = 0; i < firstDay; i++) {
+    days.push(null);
+  }
+
+  // Days of the month
+  for (let day = 1; day <= daysInMonth; day++) {
+    days.push(day);
+  }
+
+  const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return (
+    <div className="w-full">
+      {/* Month Navigation */}
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={handlePrevMonth}
+          className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-600"
+          title="Previous month"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <h3 className="text-center font-bold text-gray-900 flex-1">{monthName}</h3>
+        <button
+          onClick={handleNextMonth}
+          className="p-2 hover:bg-gray-100 rounded-lg transition text-gray-600"
+          title="Next month"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Day Headers */}
+      <div className="grid grid-cols-7 gap-1 mb-2">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+          <div key={day} className="text-center text-xs font-semibold text-gray-600 py-2">
+            {day}
+          </div>
+        ))}
+      </div>
+
+      {/* Calendar Grid */}
+      <div className="grid grid-cols-7 gap-1">
+        {days.map((day, index) => {
+          if (day === null) {
+            return <div key={`empty-${index}`} className="aspect-square" />;
+          }
+
+          const cellDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
+          const disabled = isDateDisabled(cellDate);
+          const isSelected = selectedDate && 
+            new Date(selectedDate).toDateString() === cellDate.toDateString();
+          const isToday = cellDate.toDateString() === today.toDateString();
+
+          return (
+            <button
+              key={day}
+              onClick={() => handleDateClick(day)}
+              disabled={disabled}
+              className={`
+                aspect-square flex items-center justify-center rounded-lg font-medium text-sm
+                transition-all duration-200
+                ${disabled
+                  ? 'text-gray-300 bg-gray-50 cursor-not-allowed'
+                  : isSelected
+                  ? 'bg-purple-600 text-white font-bold shadow-md'
+                  : isToday
+                  ? 'bg-purple-100 text-purple-900 border-2 border-purple-400'
+                  : 'text-gray-700 bg-white hover:bg-purple-50 border border-gray-200'
+                }
+              `}
+            >
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function BookingPage() {
   const { user } = useAuthStore();
   const router = useRouter();
@@ -55,6 +201,7 @@ export default function BookingPage() {
   const [selectedTime, setSelectedTime] = useState('');
   const [clientNotes, setClientNotes] = useState('');
   const [consentToPolicies, setConsentToPolicies] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // UI states
   const [isLoading, setIsLoading] = useState(false);
@@ -80,6 +227,25 @@ export default function BookingPage() {
     loadServices();
     loadEmployees();
   }, [user, router]);
+
+  useEffect(() => {
+    // Set default category when services load
+    if (services.length > 0 && !selectedCategory) {
+      const categories = [...new Set(services.map(s => s.category?.name).filter(Boolean))];
+      if (categories.length > 0) {
+        setSelectedCategory(categories[0]);
+      }
+    }
+  }, [services, selectedCategory]);
+
+  useEffect(() => {
+    // Auto-select today's date when step 1 is reached and no date is selected
+    if (step === 1 && !selectedDate) {
+      const today = new Date();
+      const dateString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      setSelectedDate(dateString);
+    }
+  }, [step, selectedDate]);
 
   const loadSettings = async () => {
     try {
@@ -256,6 +422,25 @@ export default function BookingPage() {
     return totalTime + maxBuffer;
   };
 
+  const getCategorizedServices = () => {
+    const grouped: Record<string, Service[]> = {};
+    services.forEach((service) => {
+      const catName = service.category?.name;
+      if (catName) {
+        if (!grouped[catName]) {
+          grouped[catName] = [];
+        }
+        grouped[catName].push(service);
+      }
+    });
+    return grouped;
+  };
+
+  const getServicesForCategory = (categoryName: string | null): Service[] => {
+    if (!categoryName) return services;
+    return services.filter(s => s.category?.name === categoryName);
+  };
+
   const getEmployeeSpecialties = (employeeId: string): Service[] => {
     const emp = employees.find((e) => e.id === employeeId);
     if (!emp || !emp.employeeServices) return [];
@@ -381,73 +566,106 @@ const handleBooking = async () => {
                   <p className="text-gray-600 mb-6">Choose one or more services for your appointment</p>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {services.map((service) => (
-                    <div
-                      key={service.id}
-                      onClick={() => toggleService(service.id)}
-                      className={`relative p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                        selectedServices.includes(service.id)
-                          ? 'border-purple-600 bg-purple-50'
-                          : 'border-gray-200 hover:border-purple-300'
-                      }`}
-                    >
-                      {/* Checkbox */}
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={`w-6 h-6 rounded border-2 flex items-center justify-center mt-1 flex-shrink-0 ${
-                            selectedServices.includes(service.id)
-                              ? 'bg-purple-600 border-purple-600'
-                              : 'border-gray-300'
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 min-h-96">
+                  {/* Categories Sidebar */}
+                  <div className="md:col-span-1">
+                    <div className="sticky top-4 space-y-2">
+                      {Object.keys(getCategorizedServices()).map((categoryName) => (
+                        <button
+                          key={categoryName}
+                          onClick={() => setSelectedCategory(categoryName)}
+                          className={`w-full text-left px-4 border-2 border-[#fdb5ff] py-3 rounded-lg font-medium transition-all ${
+                            selectedCategory === categoryName
+                              ? 'bg-purple-600 text-white shadow-lg'
+                              : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
                           }`}
                         >
-                          {selectedServices.includes(service.id) && (
-                            <span className="text-white text-sm">✓</span>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-bold text-gray-900">{service.name}</h3>
-                          {service.category && (
-                            <p className="text-sm text-purple-600 font-medium">{service.category.name}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Service Quick Info */}
-                      <div className="mt-3 pl-9 space-y-2">
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">Duration:</span>
-                          <span className="font-semibold text-gray-900">{service.baseDuration} mins</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">Price:</span>
-                          <span className="text-lg font-bold text-purple-600">${service.price.toFixed(2)}</span>
-                        </div>
-                      </div>
-
-                      {/* Description Toggle */}
-                      {service.description && (
-                        <div className="mt-3 pl-9">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedService(
-                                expandedService === service.id ? null : service.id
-                              );
-                            }}
-                            className="text-sm text-purple-600 hover:text-purple-700 font-medium"
-                          >
-                            {expandedService === service.id ? '▼ Hide' : '▶ View'} Details
-                          </button>
-                          {expandedService === service.id && (
-                            <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-                              {service.description}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                          <div className="flex justify-between items-center">
+                            <span>{categoryName}</span>
+                            <span className={`text-sm font-semibold ${
+                              selectedCategory === categoryName ? 'text-purple-100' : 'text-gray-600'
+                            }`}>
+                              {getCategorizedServices()[categoryName].length}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+
+                  {/* Services Grid */}
+                  <div className="md:col-span-2">
+                    {selectedCategory && (
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedCategory}</h3>
+                        <div className="grid grid-cols-1 gap-4">
+                          {getServicesForCategory(selectedCategory).map((service) => (
+                            <div
+                              key={service.id}
+                              onClick={() => toggleService(service.id)}
+                              className={`relative p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                                selectedServices.includes(service.id)
+                                  ? 'border-purple-600 bg-purple-50'
+                                  : 'border-gray-200 hover:border-purple-300'
+                              }`}
+                            >
+                              {/* Checkbox */}
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={`w-6 h-6 rounded border-2 flex items-center justify-center mt-0 flex-shrink-0 ${
+                                    selectedServices.includes(service.id)
+                                      ? 'bg-purple-600 border-purple-600'
+                                      : 'border-gray-300'
+                                  }`}
+                                >
+                                  {selectedServices.includes(service.id) && (
+                                    <span className="text-white text-sm">✓</span>
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <h3 className="font-bold text-sm text-gray-900">{service.name}</h3>
+                                </div>
+                              </div>
+
+                              {/* Service Quick Info */}
+                              <div className="mt-2 pl-9 space-y-1">
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-gray-600">Duration:</span>
+                                  <span className="font-semibold text-gray-900">{service.baseDuration} min</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="text-gray-600">Price:</span>
+                                  <span className="font-bold text-purple-600">${service.price.toFixed(2)}</span>
+                                </div>
+                              </div>
+
+                              {/* Description Toggle */}
+                              {service.description && (
+                                <div className="mt-1 pl-9">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedService(
+                                        expandedService === service.id ? null : service.id
+                                      );
+                                    }}
+                                    className="text-xs text-purple-600 hover:text-purple-700 font-medium"
+                                  >
+                                    {expandedService === service.id ? '▼ Hide' : '▶ View'} Details
+                                  </button>
+                                  {expandedService === service.id && (
+                                    <p className="mt-1 text-xs text-gray-600 leading-relaxed">
+                                      {service.description}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Selected Services Summary */}
@@ -605,38 +823,50 @@ const handleBooking = async () => {
                   </div>
                 </div>
 
-                {/* Date Selection */}
-                <div>
-                  <label className="block text-gray-900 font-bold mb-3">Select Date</label>
-                  <div className="flex gap-3 items-start">
-                    <div className="flex-1">
-                      <input
-                        type="date"
-                        value={selectedDate}
-                        onChange={(e) => {
-                          setSelectedDate(e.target.value);
+                {/* Date and Time Selection - Side by Side */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-10">
+                  {/* Date Selection */}
+                  <div>
+                    <label className="block text-gray-900 font-bold mb-3">Select Date</label>
+                    
+                    {/* Interactive Calendar */}
+                    <div className="bg-white border border-gray-300 rounded-lg p-4 mb-4">
+                      <InteractiveCalendar 
+                        selectedDate={selectedDate}
+                        onDateChange={(date) => {
+                          setSelectedDate(date);
                           setSelectedTime('');
                           setNextAvailableSlot(null);
                         }}
-                        min={new Date().toISOString().split('T')[0]}
-                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900"
                       />
                     </div>
+
+                    {/* Selected Date Info */}
                     {selectedDate && (
-                      <div className="text-xs text-gray-600 bg-gray-50 px-3 py-2 rounded-lg self-start mt-0.5 font-medium">
-                        {selectedEmployee === null
-                          ? `${availableSlots.length} merged slots`
-                          : `${employeeAvailabilityCount[selectedEmployee] ?? 0} slots`
-                        }
+                      <div className="flex gap-3 items-center mb-3">
+                        <div className="text-sm text-gray-700 font-medium">
+                          📅 Selected: {new Date(selectedDate).toLocaleDateString('en-US', { 
+                            weekday: 'short', 
+                            month: 'short', 
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </div>
+                        <div className="text-xs text-gray-600 bg-gray-50 px-3 py-1 rounded-lg font-medium">
+                          {selectedEmployee === null
+                            ? `${availableSlots.length} merged slots`
+                            : `${employeeAvailabilityCount[selectedEmployee] ?? 0} slots`
+                          }
+                        </div>
                       </div>
                     )}
+                    
+                    <p className="text-xs text-gray-500 mt-2">📅 Select a date at least 1 day in advance. You can book up to 60 days ahead.</p>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">📅 Select a date at least 1 day in advance. You can book up to 60 days ahead.</p>
-                </div>
 
-                {/* Time Selection */}
-                {selectedDate && (
-                  <div>
+                  {/* Time Selection */}
+                  {selectedDate && (
+                    <div>
                     <div className="flex items-center justify-between mb-3">
                       <label className="block text-gray-900 font-bold">Select Time</label>
                       {nextAvailableSlot && (
@@ -713,6 +943,7 @@ const handleBooking = async () => {
                     )}
                   </div>
                 )}
+                </div>
 
                 {/* Appointment Summary Card */}
                 {selectedDate && selectedTime && (
