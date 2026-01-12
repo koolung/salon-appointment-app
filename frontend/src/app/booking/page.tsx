@@ -20,6 +20,7 @@ interface Service {
 
 interface Employee {
   id: string;
+  isActive: boolean;
   user?: {
     firstName: string;
     lastName: string;
@@ -270,7 +271,7 @@ export default function BookingPage() {
 
   const loadEmployees = async () => {
     try {
-      const response = await api.get('/employees');
+      const response = await api.get('/employees?isActive=true');
       setEmployees(response.data);
     } catch (error) {
       console.error('Failed to load employees:', error);
@@ -370,7 +371,8 @@ export default function BookingPage() {
 
     try {
       const counts: Record<string, number> = {};
-      for (const emp of employees) {
+      // Only check availability for active employees
+      for (const emp of employees.filter(e => e.isActive !== false)) {
         const response = await api.get(`/availability/slots/${emp.id}`, {
           params: {
             date: selectedDate,
@@ -741,7 +743,7 @@ const handleBooking = async () => {
 
                     {/* Individual Employee Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {employees.map((emp) => {
+                      {employees.filter(emp => emp.isActive !== false).map((emp) => {
                         const specialties = getEmployeeSpecialties(emp.id);
                         const canProvide = canEmployeeProvidServices(emp.id);
                         const availCount = employeeAvailabilityCount[emp.id] || 0;
