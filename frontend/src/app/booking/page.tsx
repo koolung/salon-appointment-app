@@ -751,19 +751,19 @@ const handleBooking = async () => {
                         return (
                           <div
                             key={emp.id}
-                            onClick={() => setSelectedEmployee(emp.id)}
-                            className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                              selectedEmployee === emp.id
-                                ? 'border-purple-600 bg-purple-50'
-                                : canProvide
-                                ? 'border-gray-200 hover:border-purple-300'
-                                : 'border-red-200 hover:border-red-300 bg-red-50'
+                            onClick={() => canProvide && setSelectedEmployee(emp.id)}
+                            className={`p-4 rounded-lg border-2 transition-all ${
+                              !canProvide
+                                ? 'border-gray-300 bg-gray-100 cursor-not-allowed opacity-60'
+                                : selectedEmployee === emp.id
+                                ? 'border-purple-600 bg-purple-50 cursor-pointer'
+                                : 'border-gray-200 hover:border-purple-300 cursor-pointer'
                             }`}
                           >
                             {/* Name and Availability Badge */}
                             <div className="flex justify-between items-start mb-2">
                               <div>
-                                <p className="font-bold text-gray-900">
+                                <p className={`font-bold ${!canProvide ? 'text-gray-500' : 'text-gray-900'}`}>
                                   {emp.user?.firstName} {emp.user?.lastName}
                                 </p>
                               </div>
@@ -780,8 +780,8 @@ const handleBooking = async () => {
 
                             {/* Service Compatibility Warning */}
                             {selectedServices.length > 0 && !canProvide && (
-                              <p className="text-xs text-red-600 font-semibold mb-2">
-                                ⚠️ Doesn't offer all selected services
+                              <p className="text-xs text-gray-600 font-semibold mb-2">
+                                ⚠️ Doesn't offer one or more selected services
                               </p>
                             )}
 
@@ -795,7 +795,12 @@ const handleBooking = async () => {
                                       expandedEmployee === emp.id ? null : emp.id
                                     );
                                   }}
-                                  className="text-purple-600 hover:text-purple-700 font-medium"
+                                  disabled={!canProvide}
+                                  className={`font-medium ${
+                                    !canProvide
+                                      ? 'text-gray-400 cursor-not-allowed'
+                                      : 'text-purple-600 hover:text-purple-700'
+                                  }`}
                                 >
                                   {expandedEmployee === emp.id ? '▼' : '▶'} Specialties
                                 </button>
@@ -807,7 +812,9 @@ const handleBooking = async () => {
                                         className={`text-xs ${
                                           selectedServices.includes(service.id)
                                             ? 'text-purple-700 font-semibold'
-                                            : 'text-gray-600'
+                                            : canProvide
+                                            ? 'text-gray-600'
+                                            : 'text-gray-400'
                                         }`}
                                       >
                                         • {service.name}
